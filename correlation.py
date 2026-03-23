@@ -2,7 +2,7 @@
 Correlation logic: daily (legacy) and hourly (preferred).
 """
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_type
 
 # ── Event type human descriptions (shown in hover tooltips) ──────────────────
 
@@ -28,13 +28,13 @@ def compute_impact_rows(price_df: pd.DataFrame, events_df: pd.DataFrame) -> pd.D
         return pd.DataFrame()
 
     price_idx = price_df.sort_values("date").set_index("date")
-    dates_sorted = sorted(price_idx.index.tolist())
 
-    def price_at_offset(ev_pos: int, n: int):
-        idx = ev_pos + n
-        if 0 <= idx < len(dates_sorted):
-            return price_idx.loc[dates_sorted[idx], "price_usd"]
-        return None
+    def price_at_day(base_date: str, n_days: int):
+        """Look up price exactly n_days after base_date using calendar arithmetic."""
+        target = (datetime.strptime(base_date, "%Y-%m-%d") + timedelta(days=n_days)).strftime("%Y-%m-%d")
+        return price_idx.loc[target, "price_usd"] if target in price_idx.index else None
+
+    dates_sorted = sorted(price_idx.index.tolist())
 
     impact_rows = []
     for _, ev in events_df.iterrows():
@@ -46,9 +46,9 @@ def compute_impact_rows(price_df: pd.DataFrame, events_df: pd.DataFrame) -> pd.D
         ev_vol   = price_idx.loc[ev_date, "volume_24h"]
         ev_pos   = dates_sorted.index(ev_date)
 
-        p1 = price_at_offset(ev_pos, 1)
-        p3 = price_at_offset(ev_pos, 3)
-        p7 = price_at_offset(ev_pos, 7)
+        p1 = price_at_day(ev_date, 1)
+        p3 = price_at_day(ev_date, 3)
+        p7 = price_at_day(ev_date, 7)
 
         pre_vols = [
             price_idx.loc[d, "volume_24h"]
@@ -111,11 +111,10 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
     daily_idx = daily_df.sort_values("date").set_index("date") if not daily_df.empty else pd.DataFrame()
     dates_sorted = sorted(daily_idx.index.tolist()) if not daily_idx.empty else []
 
-    def price_at_offset(ev_pos: int, n: int):
-        idx = ev_pos + n
-        if 0 <= idx < len(hours_sorted):
-            return price_idx.loc[hours_sorted[idx], "price_usd"]
-        return None
+    def price_at_hour(base_hour: str, n_hours: int):
+        """Look up price exactly n_hours after base_hour using calendar arithmetic."""
+        target = (datetime.strptime(base_hour, "%Y-%m-%d %H:00") + timedelta(hours=n_hours)).strftime("%Y-%m-%d %H:00")
+        return price_idx.loc[target, "price_usd"] if target in price_idx.index else None
 
     def pct(p, base):
         return round((p / base - 1) * 100, 2) if p and base else None
@@ -147,9 +146,10 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
             ev_vol   = price_idx.loc[ev_hour, "volume_24h"]
 
             pre_vols = [
-                price_idx.loc[h, "volume_24h"]
-                for h in hours_sorted[max(0, ev_pos - 24):ev_pos]
-                if pd.notna(price_idx.loc[h, "volume_24h"])
+                price_idx.loc[price_at_hour(ev_hour, -i), "volume_24h"]
+                for i in range(1, 25)
+                if price_at_hour(ev_hour, -i) in price_idx.index
+                and pd.notna(price_idx.loc[price_at_hour(ev_hour, -i), "volume_24h"])
             ]
             avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
             vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0
@@ -159,11 +159,11 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
                 "Datetime":    ev_hour,
                 "Resolution":  "hourly",
                 "Price":       round(ev_price, 5),
-                "T+1h %":      pct(price_at_offset(ev_pos, 1),  ev_price),
-                "T+4h %":      pct(price_at_offset(ev_pos, 4),  ev_price),
-                "T+12h %":     pct(price_at_offset(ev_pos, 12), ev_price),
-                "T+24h %":     pct(price_at_offset(ev_pos, 24), ev_price),
-                "T+3d %":      pct(price_at_offset(ev_pos, 72), ev_price),
+                "T+1h %":      pct(price_at_hour(ev_hour, 1),  ev_price),
+                "T+4h %":      pct(price_at_hour(ev_hour, 4),  ev_price),
+                "T+12h %":     pct(price_at_hour(ev_hour, 12), ev_price),
+                "T+24h %":     pct(price_at_hour(ev_hour, 24), ev_price),
+                "T+3d %":      pct(price_at_hour(ev_hour, 72), ev_price),
                 "Vol Spike %": round(vol_spike_pct, 1),
             })
         else:
@@ -173,16 +173,16 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
                 continue
             ev_price = daily_idx.loc[ev_date, "price_usd"]
             ev_vol   = daily_idx.loc[ev_date, "volume_24h"]
-            d_pos    = dates_sorted.index(ev_date)
 
             def dprice(n):
-                i = d_pos + n
-                return daily_idx.loc[dates_sorted[i], "price_usd"] if 0 <= i < len(dates_sorted) else None
+                target = (datetime.strptime(ev_date, "%Y-%m-%d") + timedelta(days=n)).strftime("%Y-%m-%d")
+                return daily_idx.loc[target, "price_usd"] if target in daily_idx.index else None
 
             pre_vols = [
-                daily_idx.loc[d, "volume_24h"]
-                for d in dates_sorted[max(0, d_pos - 7):d_pos]
-                if pd.notna(daily_idx.loc[d, "volume_24h"])
+                daily_idx.loc[(datetime.strptime(ev_date, "%Y-%m-%d") - timedelta(days=i)).strftime("%Y-%m-%d"), "volume_24h"]
+                for i in range(1, 8)
+                if (datetime.strptime(ev_date, "%Y-%m-%d") - timedelta(days=i)).strftime("%Y-%m-%d") in daily_idx.index
+                and pd.notna(daily_idx.loc[(datetime.strptime(ev_date, "%Y-%m-%d") - timedelta(days=i)).strftime("%Y-%m-%d"), "volume_24h"])
             ]
             avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
             vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0

@@ -64,9 +64,9 @@ with st.sidebar:
         except ImportError:
             st.caption("Install `streamlit-autorefresh` for auto mode.")
 
-    if st.button("⏱️ Refresh Hourly Prices (last 30d)", use_container_width=True, type="primary"):
+    if st.button("⏱️ Refresh Hourly Prices (last 90d)", use_container_width=True, type="primary"):
         with st.spinner("Fetching hourly prices from CoinGecko…"):
-            h_df = fetcher.get_historical_prices_hourly(days=30)
+            h_df = fetcher.get_historical_prices_hourly(days=90)
             if not h_df.empty:
                 n = db.upsert_hourly_prices(h_df)
                 db.log_refresh("price_hourly", n)
@@ -77,7 +77,7 @@ with st.sidebar:
 
     if st.button("🔄 Refresh Price & Exchange Data", use_container_width=True):
         with st.spinner("Fetching price history from CoinGecko…"):
-            df = fetcher.get_historical_prices(days=140)
+            df = fetcher.get_historical_prices(days=365)
             if not df.empty:
                 n = db.upsert_prices(df)
                 db.log_refresh("price_history", n)
@@ -659,7 +659,7 @@ with tab_risk:
         if current:
             # Significant move with no recent events
             recent_events_2d = events_df[
-                events_df["date"] >= (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+                events_df["date"] >= (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
             ] if not events_df.empty else pd.DataFrame()
 
             if abs(current["pct_24h"]) > 5 and recent_events_2d.empty:
@@ -724,15 +724,29 @@ with tab_risk:
 - 🐦 Increase in tweet frequency from @GoKiteAI → announcement likely
 - 🌏 KRW/TRY exchange volume spike → retail-driven momentum (Korea/Turkey)
 - 📉 DEX volume surge → on-chain activity, possible whale movement
-
-**Observed Pattern Library:**
-| Pattern | Typical Outcome |
-|---------|----------------|
-| Partnership tweet → | Short spike +3–8%, then correction |
-| Listing announcement → | 24h spike, normalizes in 3–5d |
-| Airdrop / reward event → | Sell pressure post-claim period |
-| Regulatory news → | Immediate drop, slow recovery |
 """)
+
+        # Computed pattern library from actual event/price data
+        st.subheader("📊 Observed Pattern Library (computed from your data)")
+        try:
+            _impact = compute_impact_rows(price_df, events_df) if not (price_df.empty or events_df.empty) else pd.DataFrame()
+            if not _impact.empty and "T+1d %" in _impact.columns:
+                _metric_col = "T+1d %"
+                _pat = _impact.groupby("Event Type").agg(
+                    Count=("ID", "count"),
+                    Avg_T1d=(  _metric_col, "mean"),
+                    Med_T1d=(  _metric_col, "median"),
+                    Hit_Rate=( _metric_col, lambda x: round((x > 0).mean() * 100, 0)),
+                ).round(2).sort_values("Avg_T1d", ascending=False).reset_index()
+                _pat.columns = ["Event Type", "# Events", "Avg T+1d %", "Median T+1d %", "% Days Price Rose"]
+                _pat["% Days Price Rose"] = _pat["% Days Price Rose"].astype(str) + "%"
+                st.dataframe(_pat, use_container_width=True,
+                             column_config={"Event Type": st.column_config.TextColumn(width="medium")})
+                st.caption("⚠️ T+1d returns include overall market trend. A positive number does not mean the event caused the rise.")
+            else:
+                st.info("Refresh Price & Exchange Data to populate this table.")
+        except Exception:
+            st.info("Refresh price data to see computed patterns.")
 
         # Recent events summary
         if not events_df.empty:
@@ -745,5 +759,5 @@ with tab_risk:
 st.divider()
 st.caption(
     f"🪁 KITE Dashboard · Data: CoinGecko + CoinMarketCap · Events: @GoKiteAI · "
-    f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC"
+    f"Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC"
 )

@@ -246,6 +246,29 @@ _QUOTE_MAP = {
     "0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48": "USDC(ETH)",
 }
 
+
+def _pct_styler(df, cols):
+    """Return a pandas Styler with ▲/▼ symbols and green/red colouring for % columns."""
+    present = [c for c in cols if c in df.columns]
+    if not present:
+        return df.style
+
+    def _fmt(v):
+        if not isinstance(v, (int, float)) or pd.isna(v):
+            return "–"
+        sym = "▲" if v > 0 else ("▼" if v < 0 else " ")
+        return f"{sym} {abs(v):.2f}%"
+
+    def _clr(v):
+        if not isinstance(v, (int, float)) or pd.isna(v):
+            return ""
+        if v > 0:  return "color: #2E7D32; font-weight: 600"
+        if v < 0:  return "color: #C62828; font-weight: 600"
+        return "color: #78909C"
+
+    return df.style.format({c: _fmt for c in present}).map(_clr, subset=present)
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_overview, tab_events, tab_corr, tab_exchanges, tab_analytics, tab_risk = st.tabs([
     "📊 Overview", "📅 Events", "🔗 Correlation",
@@ -724,12 +747,11 @@ with tab_corr:
 
             _summary["Signal"] = _summary[metric].apply(_signal_label)
             st.dataframe(
-                _summary.sort_values(metric, ascending=False),
+                _pct_styler(_summary.sort_values(metric, ascending=False), valid_metrics),
                 use_container_width=True,
                 column_config={
                     "What it means": st.column_config.TextColumn(width="large"),
                     "Signal": st.column_config.TextColumn("Signal"),
-                    **{m: st.column_config.NumberColumn(format="%.2f%%") for m in valid_metrics},
                 },
             )
             st.caption("🟢 Strong: avg > 2% · 🟡 Weak: 0–2% · 🔴 Negative: < 0%")
@@ -784,12 +806,12 @@ with tab_corr:
             tb5, tw5 = st.columns(2)
             with tb5:
                 st.markdown("**Top 5 Best Events**")
-                st.dataframe(_ranked_show.nlargest(5, metric), use_container_width=True,
-                             column_config={metric: st.column_config.NumberColumn(format="%.2f%%")})
+                st.dataframe(_pct_styler(_ranked_show.nlargest(5, metric), [metric]),
+                             use_container_width=True)
             with tw5:
                 st.markdown("**Top 5 Worst Events**")
-                st.dataframe(_ranked_show.nsmallest(5, metric), use_container_width=True,
-                             column_config={metric: st.column_config.NumberColumn(format="%.2f%%")})
+                st.dataframe(_pct_styler(_ranked_show.nsmallest(5, metric), [metric]),
+                             use_container_width=True)
 
             st.divider()
 
@@ -824,12 +846,12 @@ with tab_corr:
             _full_cols = ([date_col, "Event Type", "Description", "Sentiment", "Price"]
                          + valid_metrics + ["Vol Spike %"])
             _full_cols = [c for c in _full_cols if c in impact_df.columns]
+            _pct_cols_full = [c for c in valid_metrics + ["Vol Spike %"] if c in impact_df.columns]
             st.dataframe(
-                impact_df[_full_cols].sort_values(date_col, ascending=False),
+                _pct_styler(impact_df[_full_cols].sort_values(date_col, ascending=False), _pct_cols_full),
                 use_container_width=True,
                 column_config={
                     "Description": st.column_config.TextColumn(width="large"),
-                    **{m: st.column_config.NumberColumn(format="%.2f%%") for m in valid_metrics},
                 },
             )
 
@@ -919,15 +941,16 @@ with tab_exchanges:
                 _arb_rows = exchange_df[_arb_mask].copy()
                 if not _arb_rows.empty:
                     _arb_rows["Deviation %"] = ((_arb_rows["price_usd"] - _med) / _med * 100).round(3)
+                    _arb_rows["quote"] = _arb_rows["quote"].replace(_QUOTE_MAP)
                     _arb_rows["Note"] = "Arbitrage opportunity"
                     st.warning(f"{len(_arb_rows)} exchange(s) deviate >0.5% from median price (${_med:.5f}).")
+                    _arb_show = (_arb_rows[["exchange", "base", "quote", "price_usd", "Deviation %", "Note"]]
+                                 .sort_values("Deviation %", key=abs, ascending=False))
                     st.dataframe(
-                        _arb_rows[["exchange", "base", "quote", "price_usd", "Deviation %", "Note"]]
-                        .sort_values("Deviation %", key=abs, ascending=False),
+                        _pct_styler(_arb_show, ["Deviation %"]),
                         use_container_width=True,
                         column_config={
                             "price_usd": st.column_config.NumberColumn("Price (USD)", format="$%.5f"),
-                            "Deviation %": st.column_config.NumberColumn("Deviation %", format="%.3f%%"),
                         },
                     )
                 else:
@@ -1340,7 +1363,7 @@ with tab_risk:
                     margin=dict(l=0, r=60, t=40, b=0),
                 )
                 st.plotly_chart(fig_pat, use_container_width=True, config=_PCFG)
-                st.dataframe(_pat.sort_values("Avg T+1d %", ascending=False),
+                st.dataframe(_pct_styler(_pat.sort_values("Avg T+1d %", ascending=False), ["Avg T+1d %"]),
                              use_container_width=True, hide_index=True)
                 st.caption("⚠️ T+1d returns include overall market trend — does not prove causation.")
             else:

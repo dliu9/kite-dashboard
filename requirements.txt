@@ -1,0 +1,8 @@
+streamlit>=1.32.0
+plotly>=5.19.0
+pandas>=2.2.0
+requests>=2.31.0
+twikit>=2.3.3
+streamlit-autorefresh>=1.0.1
+python-dotenv>=1.0.0
+playwright>=1.40.0

@@ -1,0 +1,7 @@
+x_cookies.json
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.streamlit/secrets.toml
+.claude/

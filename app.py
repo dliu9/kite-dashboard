@@ -608,7 +608,7 @@ with tab_events:
                 type_counts, y="Event Type", x="Count", orientation="h",
                 title="Events by Type",
                 color="Count", color_continuous_scale=[_GREY, _ORANGE],
-                template=_TMPL, hoverlabel=_HOVER,
+                template=_TMPL,
             )
             fig_hbar.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0),
                                    showlegend=False, coloraxis_showscale=False)
@@ -648,7 +648,7 @@ with tab_events:
                 title="Sentiment Split",
                 color="Sentiment",
                 color_discrete_map=_SENT_CLR,
-                template=_TMPL, hoverlabel=_HOVER, hole=0.4,
+                template=_TMPL, hole=0.4,
             )
             fig_sent.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
             st.plotly_chart(fig_sent, use_container_width=True, config=_PCFG)
@@ -745,7 +745,7 @@ with tab_corr:
                     zmin=-5, zmax=5, text_auto=".2f", aspect="auto",
                     title="Return Heatmap by Event Type & Time Window",
                     labels={"color": "Avg Return (%)"},
-                    template=_TMPL, hoverlabel=_HOVER,
+                    template=_TMPL,
                 )
                 fig_heat.update_layout(margin=dict(l=0, r=0, t=50, b=0))
                 st.plotly_chart(fig_heat, use_container_width=True, config=_PCFG)
@@ -765,7 +765,7 @@ with tab_corr:
                 _avg_by_type2, x=metric, y="Event Type", orientation="h",
                 title=f"Average {metric} by Event Type",
                 color=metric, color_continuous_scale=[_RED, "white", _GREEN],
-                text=metric, template=_TMPL, hoverlabel=_HOVER,
+                text=metric, template=_TMPL,
                 hover_data={"Type Info": True},
             )
             fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
@@ -869,7 +869,7 @@ with tab_exchanges:
                 color="market_type",
                 title="Top 20 Markets by Volume",
                 color_discrete_map={"spot": _BLUE, "dex": _GREEN},
-                template=_TMPL, hoverlabel=_HOVER,
+                template=_TMPL,
                 labels={"volume_usd": "Volume (USD)", "exchange": ""},
             )
             fig_ex.update_layout(yaxis={"categoryorder": "total ascending"}, height=500,
@@ -882,7 +882,7 @@ with tab_exchanges:
                 exchange_df, path=["geography", "exchange"], values="volume_usd",
                 title="Volume by Geography & Exchange",
                 color="volume_usd", color_continuous_scale=[_BLUE, _GREEN],
-                template=_TMPL, hoverlabel=_HOVER,
+                template=_TMPL,
             )
             fig_tree.update_traces(
                 textinfo="label+percent root",
@@ -897,7 +897,7 @@ with tab_exchanges:
                           title="Spot vs DEX Volume Split",
                           color="market_type",
                           color_discrete_map={"spot": _BLUE, "dex": _GREEN},
-                          template=_TMPL, hoverlabel=_HOVER, hole=0.4)
+                          template=_TMPL, hole=0.4)
         fig_type.update_layout(margin=dict(l=0, r=0, t=50, b=0))
         st.plotly_chart(fig_type, use_container_width=True, config=_PCFG)
 
@@ -936,7 +936,7 @@ with tab_exchanges:
                       .sort_values(ascending=False).head(10).reset_index())
         fig_quote = px.bar(_quote_vol, x="quote", y="volume_usd",
                            title="Volume by Quote Currency",
-                           color_discrete_sequence=[_BLUE], template=_TMPL, hoverlabel=_HOVER,
+                           color_discrete_sequence=[_BLUE], template=_TMPL,
                            text="volume_usd",
                            labels={"volume_usd": "Volume (USD)", "quote": "Quote Currency"})
         fig_quote.update_traces(texttemplate="$%{text:,.0f}", textposition="outside")
@@ -1228,7 +1228,7 @@ with tab_risk:
                 fig_hm = px.imshow(_hm, color_continuous_scale="RdYlGn",
                                    labels=dict(x="Sentiment", y="Event Type", color="Count"),
                                    title="Event Type × Sentiment Count",
-                                   template=_TMPL, hoverlabel=_HOVER, aspect="auto")
+                                   template=_TMPL, aspect="auto")
                 fig_hm.update_layout(height=360, margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_hm, use_container_width=True, config=_PCFG)
             except Exception as _e:

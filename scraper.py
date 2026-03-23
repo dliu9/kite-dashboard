@@ -165,19 +165,25 @@ async def _scrape_browser_async(username: str = "GoKiteAI", max_tweets: int = 50
         page = await context.new_page()
         await page.goto(f"https://x.com/{username}", wait_until="domcontentloaded")
 
-        # Wait for timeline to appear (logged-in pages take longer)
+        # Wait for timeline — if cookies are expired X loads a blank page,
+        # so we retry without cookies as a fallback
         try:
-            await page.wait_for_selector("article", timeout=15000)
+            await page.wait_for_selector("article", timeout=10000)
         except Exception:
-            # Fallback: just wait and try anyway
-            await page.wait_for_timeout(8000)
+            # Cookies likely expired — close and retry without them
+            await browser.close()
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            await page.goto(f"https://x.com/{username}", wait_until="domcontentloaded")
+            await page.wait_for_selector("article", timeout=15000)
 
-        max_scrolls = max(5, max_tweets // 8)
-        for _ in range(max_scrolls):
-            if len(results) >= max_tweets:
-                break
-
+        no_new_count = 0  # consecutive scrolls with no new tweets
+        while len(results) < max_tweets:
             articles = await page.query_selector_all("article")
+            batch_new = 0
+
             for article in articles:
                 # Tweet URL / ID
                 links = await article.query_selector_all('a[href*="/status/"]')
@@ -194,6 +200,7 @@ async def _scrape_browser_async(username: str = "GoKiteAI", max_tweets: int = 50
                 if not tweet_id or tweet_id in seen_ids:
                     continue
                 seen_ids.add(tweet_id)
+                batch_new += 1
 
                 # Timestamp
                 date_str, datetime_str = "", ""
@@ -235,9 +242,16 @@ async def _scrape_browser_async(username: str = "GoKiteAI", max_tweets: int = 50
                 if len(results) >= max_tweets:
                     break
 
-            # Scroll down to load more
+            if batch_new == 0:
+                no_new_count += 1
+                if no_new_count >= 3:
+                    break  # X stopped loading new content
+            else:
+                no_new_count = 0
+
+            # Scroll down and wait for X to load more tweets
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(2500)
+            await page.wait_for_timeout(3000)
 
         await browser.close()
 
@@ -260,7 +274,7 @@ def scrape_tweets_browser(username: str = "GoKiteAI", max_tweets: int = 50):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_run)
-        results, err = future.result(timeout=120)
+        results, err = future.result(timeout=300)  # 5 min for large fetches
     return results, err
 
 

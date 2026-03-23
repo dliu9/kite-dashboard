@@ -81,9 +81,12 @@ with st.sidebar:
                 st.toast(f"✅ {n} exchange records saved")
         st.rerun()
 
+    max_posts = st.select_slider(
+        "Posts to fetch", options=[50, 100, 200, 300, 500], value=100
+    )
     if st.button("🌐 Fetch Posts via Browser (Playwright)", use_container_width=True, type="primary"):
-        with st.spinner("Opening browser and scraping @GoKiteAI…"):
-            tweets, err = scraper.scrape_tweets_browser("GoKiteAI", max_tweets=50)
+        with st.spinner(f"Scraping up to {max_posts} posts from @GoKiteAI…"):
+            tweets, err = scraper.scrape_tweets_browser("GoKiteAI", max_tweets=max_posts)
         if err:
             st.error(f"Browser scrape error: {err}")
         elif tweets:

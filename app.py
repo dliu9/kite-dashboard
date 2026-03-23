@@ -419,11 +419,17 @@ _QUOTE_MAP = {
 }
 
 
+_TABLE_STYLES = [
+    {"selector": "thead tr th", "props": "background-color: #111135; color: #8AA8FF; border-bottom: 1px solid #1C1C42; font-family: 'Syne', sans-serif; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase;"},
+    {"selector": "tbody tr td", "props": "background-color: #0D0D28; color: #C0CCEE; border-bottom: 1px solid #141430;"},
+    {"selector": "tbody tr:hover td", "props": "background-color: #141440 !important;"},
+    {"selector": "table", "props": "border-collapse: collapse; width: 100%;"},
+]
+
+
 def _pct_styler(df, cols):
-    """Return a pandas Styler with ▲/▼ symbols and green/red colouring for % columns."""
+    """Return a dark-themed pandas Styler with ▲/▼ symbols on % columns."""
     present = [c for c in cols if c in df.columns]
-    if not present:
-        return df.style
 
     def _fmt(v):
         if not isinstance(v, (int, float)) or pd.isna(v):
@@ -433,12 +439,21 @@ def _pct_styler(df, cols):
 
     def _clr(v):
         if not isinstance(v, (int, float)) or pd.isna(v):
-            return ""
-        if v > 0:  return "color: #00E5A0; font-weight: 600"
-        if v < 0:  return "color: #FF2D6F; font-weight: 600"
-        return "color: #5B6FA8"
+            return "background-color: #0D0D28; color: #5B6FA8"
+        if v > 0:  return "background-color: #0D1F18; color: #00E5A0; font-weight: 600"
+        if v < 0:  return "background-color: #1F0D18; color: #FF2D6F; font-weight: 600"
+        return "background-color: #0D0D28; color: #5B6FA8"
 
-    return df.style.format({c: _fmt for c in present}).map(_clr, subset=present)
+    styler = df.style.set_properties(**{
+        "background-color": "#0D0D28",
+        "color": "#C0CCEE",
+        "border-color": "#1C1C42",
+    }).set_table_styles(_TABLE_STYLES)
+
+    if present:
+        styler = styler.format({c: _fmt for c in present}).map(_clr, subset=present)
+
+    return styler
 
 
 def _apply_dark(fig):
@@ -782,7 +797,7 @@ with tab_events:
             show_cols = [c for c in show_cols if c in display_df.columns]
 
             st.dataframe(
-                display_df[show_cols],
+                _pct_styler(display_df[show_cols], []),
                 use_container_width=True, height=420,
                 column_config={
                     "description": st.column_config.TextColumn("Description", width="large"),
@@ -958,10 +973,12 @@ with tab_corr:
 
             # ── Return Heatmap ──
             _heatmap_df = impact_df.groupby("Event Type")[valid_metrics].mean().round(2)
+            # Fill NaN cells with 0 so every cell renders — NaN causes blank patches
+            _heatmap_df = _heatmap_df.fillna(0)
             if not _heatmap_df.empty and len(valid_metrics) >= 1:
                 fig_heat = px.imshow(
                     _heatmap_df,
-                    color_continuous_scale=[_RED, "white", _GREEN],
+                    color_continuous_scale=[[0, _RED], [0.5, "#1A1A3F"], [1, _GREEN]],
                     zmin=-5, zmax=5, text_auto=".2f", aspect="auto",
                     title="Return Heatmap by Event Type & Time Window",
                     labels={"color": "Avg Return (%)"},
@@ -970,7 +987,7 @@ with tab_corr:
                 fig_heat.update_layout(margin=dict(l=0, r=0, t=50, b=0))
                 _apply_dark(fig_heat)
                 st.plotly_chart(fig_heat, use_container_width=True, config=_PCFG)
-                st.caption("Each cell = mean price change (%) for that event type and time window. Green = rose, Red = fell.")
+                st.caption("Each cell = mean price change (%). Green = rose · Red = fell · Dark = no data (shown as 0)")
             else:
                 st.info("Not enough data to render heatmap.")
 
@@ -1180,8 +1197,8 @@ with tab_exchanges:
 
         st.subheader("All Exchange Data")
         st.dataframe(
-            _ex_clean[["exchange", "base", "quote", "volume_usd", "price_usd",
-                        "market_type", "geography"]].sort_values("volume_usd", ascending=False),
+            _pct_styler(_ex_clean[["exchange", "base", "quote", "volume_usd", "price_usd",
+                        "market_type", "geography"]].sort_values("volume_usd", ascending=False), []),
             use_container_width=True,
             column_config={
                 "volume_usd": st.column_config.NumberColumn("Volume (USD)", format="$%.0f"),
@@ -1399,14 +1416,15 @@ with tab_analytics:
         except Exception:
             return "Unknown"
 
-    st.dataframe(pd.DataFrame([
+    _dq_df = pd.DataFrame([
         {"Source": "Daily Price History", "Last Refresh": db.get_last_refresh("price_history"),
          "Status": _freshness_status(db.get_last_refresh("price_history"))},
         {"Source": "Hourly Prices",       "Last Refresh": db.get_last_refresh("price_hourly"),
          "Status": _freshness_status(db.get_last_refresh("price_hourly"))},
         {"Source": "Twitter / Posts",     "Last Refresh": db.get_last_refresh("tweets"),
          "Status": _freshness_status(db.get_last_refresh("tweets"))},
-    ]), use_container_width=True, hide_index=True)
+    ])
+    st.dataframe(_pct_styler(_dq_df, []), use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1588,7 +1606,7 @@ with tab_risk:
             st.divider()
             st.subheader("📅 Latest 7 Events")
             _rc = [c for c in ["date", "event_type", "description", "sentiment_label", "source"] if c in events_df.columns]
-            st.dataframe(events_df.head(7)[_rc], use_container_width=True, hide_index=True)
+            st.dataframe(_pct_styler(events_df.head(7)[_rc], []), use_container_width=True, hide_index=True)
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────

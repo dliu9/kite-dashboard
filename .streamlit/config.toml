@@ -1,0 +1,7 @@
+[theme]
+base = "dark"
+primaryColor     = "#00E5FF"        # cyan — active elements, sliders, focus rings
+backgroundColor  = "#07071A"        # page background
+secondaryBackgroundColor = "#0D0D28" # sidebar + dataframe canvas + input fields
+textColor        = "#C0CCEE"        # body text
+font             = "sans serif"

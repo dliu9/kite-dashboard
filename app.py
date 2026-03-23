@@ -794,13 +794,19 @@ with tab_corr:
             st.divider()
 
             # ── Early vs Late reaction dual bar ──
+            # Prefer T+24h % vs T+3d % — available for both hourly and daily events.
+            # Fall back to first two valid_metrics if those columns aren't present.
             if len(valid_metrics) >= 2:
-                _m_early = valid_metrics[0]
-                _m_late  = valid_metrics[-2]
+                _prefer_early = next((m for m in ["T+24h %", "T+1d %"] if m in impact_df.columns), None)
+                _prefer_late  = "T+3d %" if "T+3d %" in impact_df.columns else None
+                if _prefer_early and _prefer_late:
+                    _m_early, _m_late = _prefer_early, _prefer_late
+                else:
+                    _m_early, _m_late = valid_metrics[0], valid_metrics[-1]
                 _both    = [c for c in [_m_early, _m_late] if c in impact_df.columns]
                 if len(_both) == 2:
                     st.subheader(f"Early ({_m_early}) vs Late ({_m_late}) Reaction per Event")
-                    _valid = impact_df.dropna(subset=_both)
+                    _valid = impact_df.dropna(subset=_both, how="all")
                     fig_dual = go.Figure()
                     fig_dual.add_trace(go.Bar(name=_m_early, x=_valid[date_col], y=_valid[_m_early], marker_color=_BLUE))
                     fig_dual.add_trace(go.Bar(name=_m_late,  x=_valid[date_col], y=_valid[_m_late],  marker_color=_GREEN))

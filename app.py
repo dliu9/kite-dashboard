@@ -40,8 +40,8 @@ st.markdown("""
 }
 .stTabs [aria-selected="true"] {
     background: #ffffff;
-    border-bottom: 2px solid #1a73e8;
-    color: #1a73e8;
+    border-bottom: 2px solid #F5A623;
+    color: #F5A623;
 }
 h1, h2, h3 { color: #202124; }
 .stDataFrame { border: 1px solid #e8eaed; border-radius: 8px; }
@@ -207,12 +207,44 @@ def get_current_snapshot_cached():
 
 current = get_current_snapshot_cached()
 
-# ── Colour palette & chart template (GA style) ────────────────────────────────
-_BLUE   = "#1a73e8"
-_GREEN  = "#34a853"
-_RED    = "#ea4335"
-_YELLOW = "#fbbc04"
-_TMPL   = "plotly_white"
+# ── KITE brand colour palette ─────────────────────────────────────────────────
+_ORANGE  = "#F5A623"   # KITE primary orange
+_BLUE    = "#1565C0"   # deep blue
+_GREEN   = "#2E7D32"   # dark green (positive / up)
+_RED     = "#C62828"   # dark red   (negative / down)
+_PURPLE  = "#6A1B9A"
+_TEAL    = "#00838F"
+_INDIGO  = "#3949AB"
+_GREY    = "#78909C"   # neutral (replaces yellow)
+_TMPL    = "plotly_white"
+
+# Chart hover: larger, high-contrast label
+_HOVER = dict(font_size=14, bgcolor="white", bordercolor="#cccccc", font_color="#202124")
+# Plotly chart config: enable scroll-zoom & draggable pan
+_PCFG  = {"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["select2d","lasso2d"]}
+
+# Sentiment colours (neutral → grey, not yellow)
+_SENT_CLR = {"positive": _GREEN, "negative": _RED, "neutral": _GREY}
+
+# Per-event-type marker colours (10 distinct, well-separated hues)
+_EVT_CLR = {
+    "Partnership":    _BLUE,
+    "Milestone":      _ORANGE,
+    "Listing":        _GREEN,
+    "Funding":        _PURPLE,
+    "Announcement":   _GREY,
+    "Community":      _TEAL,
+    "Product Launch": "#AD1457",
+    "Airdrop":        "#E64A19",
+    "Security":       _RED,
+    "Regulation":     "#4E342E",
+}
+
+# DEX contract address → readable ticker
+_QUOTE_MAP = {
+    "0X55D398326F99059FF775485246999027B3197955": "USDT(BSC)",
+    "0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48": "USDC(ETH)",
+}
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_overview, tab_events, tab_corr, tab_exchanges, tab_analytics, tab_risk = st.tabs([
@@ -271,8 +303,8 @@ with tab_overview:
         fig.add_trace(go.Scatter(
             x=chart_df[x_col], y=chart_df["price_usd"],
             mode="lines", name="Price (USD)",
-            line=dict(color=_BLUE, width=1.5 if use_hourly else 2),
-            fill="tozeroy", fillcolor="rgba(26,115,232,0.08)",
+            line=dict(color=_ORANGE, width=1.5 if use_hourly else 2),
+            fill="tozeroy", fillcolor="rgba(245,166,35,0.10)",
         ))
 
         # 7-day / 168-hour moving average
@@ -282,12 +314,12 @@ with tab_overview:
             fig.add_trace(go.Scatter(
                 x=chart_df[x_col], y=ma,
                 mode="lines", name="7-day MA",
-                line=dict(color=_GREEN, width=2, dash="dash"),
+                line=dict(color=_INDIGO, width=2, dash="dash"),
                 fill=None,
             ))
 
         # Event markers with different shapes per event type
-        sentiment_colors = {"positive": _GREEN, "negative": _RED, "neutral": _YELLOW}
+        sentiment_colors = _SENT_CLR
         event_type_symbols = {
             "Partnership": "diamond",
             "Milestone": "star",
@@ -319,7 +351,7 @@ with tab_overview:
                         continue
                     if ev_hour not in h_indexed.index:
                         continue
-                    color = sentiment_colors.get(ev.get("sentiment_label"), _YELLOW)
+                    color = _EVT_CLR.get(ev.get("event_type", ""), _GREY)
                     ev_type = ev.get("event_type", "")
                     symbol = event_type_symbols.get(ev_type, "star")
                     type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
@@ -343,7 +375,7 @@ with tab_overview:
                 for _, ev in events_df.iterrows():
                     if ev["date"] not in price_indexed.index:
                         continue
-                    color = sentiment_colors.get(ev.get("sentiment_label"), _YELLOW)
+                    color = _EVT_CLR.get(ev.get("event_type", ""), _GREY)
                     ev_type = ev.get("event_type", "")
                     symbol = event_type_symbols.get(ev_type, "star")
                     type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
@@ -369,10 +401,11 @@ with tab_overview:
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Price (USD)",
             hovermode="x unified", template=_TMPL,
+            hoverlabel=dict(font_size=15, bgcolor="white", bordercolor="#cccccc", font_color="#202124"),
             height=460, margin=dict(l=0, r=0, t=40, b=0),
             plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config=_PCFG)
 
         # Event marker legend
         if not events_df.empty:
@@ -449,13 +482,13 @@ with tab_overview:
             title="Hourly Trading Volume" if use_hourly else "Daily Trading Volume",
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Volume (USD)",
-            template=_TMPL, height=240,
+            template=_TMPL, hoverlabel=_HOVER, height=240,
             margin=dict(l=0, r=0, t=40, b=0),
             plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
             showlegend=False,
         )
         st.caption("🟢 Price up day  🔴 Price down day")
-        st.plotly_chart(fig_vol, use_container_width=True)
+        st.plotly_chart(fig_vol, use_container_width=True, config=_PCFG)
 
         # ── Trend summary ──
         if current:
@@ -574,12 +607,12 @@ with tab_events:
             fig_hbar = px.bar(
                 type_counts, y="Event Type", x="Count", orientation="h",
                 title="Events by Type",
-                color="Count", color_continuous_scale=[_YELLOW, _BLUE],
-                template=_TMPL,
+                color="Count", color_continuous_scale=[_GREY, _ORANGE],
+                template=_TMPL, hoverlabel=_HOVER,
             )
             fig_hbar.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0),
                                    showlegend=False, coloraxis_showscale=False)
-            st.plotly_chart(fig_hbar, use_container_width=True)
+            st.plotly_chart(fig_hbar, use_container_width=True, config=_PCFG)
 
         with cb:
             try:
@@ -591,7 +624,7 @@ with tab_events:
                 )
                 type_color_map = {
                     "Partnership": _BLUE, "Product Launch": _GREEN, "Listing": _RED,
-                    "Funding": _YELLOW, "Milestone": "#7c3aed", "Community": "#06b6d4",
+                    "Funding": _PURPLE, "Milestone": _ORANGE, "Community": _TEAL,
                 }
                 monthly_colors = [type_color_map.get(t, "#9aa0a6") for t in dom_type]
                 fig_monthly = go.Figure(go.Bar(
@@ -600,10 +633,10 @@ with tab_events:
                     text=monthly["Count"], textposition="outside",
                 ))
                 fig_monthly.update_layout(
-                    title="Events per Month", template=_TMPL, height=320,
+                    title="Events per Month", template=_TMPL, hoverlabel=_HOVER, height=320,
                     margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
                 )
-                st.plotly_chart(fig_monthly, use_container_width=True)
+                st.plotly_chart(fig_monthly, use_container_width=True, config=_PCFG)
             except Exception:
                 st.caption("Monthly frequency chart unavailable.")
 
@@ -614,11 +647,11 @@ with tab_events:
                 sent_counts, values="Count", names="Sentiment",
                 title="Sentiment Split",
                 color="Sentiment",
-                color_discrete_map={"positive": _GREEN, "negative": _RED, "neutral": _YELLOW},
-                template=_TMPL, hole=0.4,
+                color_discrete_map=_SENT_CLR,
+                template=_TMPL, hoverlabel=_HOVER, hole=0.4,
             )
             fig_sent.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_sent, use_container_width=True)
+            st.plotly_chart(fig_sent, use_container_width=True, config=_PCFG)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -712,10 +745,10 @@ with tab_corr:
                     zmin=-5, zmax=5, text_auto=".2f", aspect="auto",
                     title="Return Heatmap by Event Type & Time Window",
                     labels={"color": "Avg Return (%)"},
-                    template=_TMPL,
+                    template=_TMPL, hoverlabel=_HOVER,
                 )
                 fig_heat.update_layout(margin=dict(l=0, r=0, t=50, b=0))
-                st.plotly_chart(fig_heat, use_container_width=True)
+                st.plotly_chart(fig_heat, use_container_width=True, config=_PCFG)
                 st.caption("Each cell = mean price change (%) for that event type and time window. Green = rose, Red = fell.")
             else:
                 st.info("Not enough data to render heatmap.")
@@ -732,13 +765,13 @@ with tab_corr:
                 _avg_by_type2, x=metric, y="Event Type", orientation="h",
                 title=f"Average {metric} by Event Type",
                 color=metric, color_continuous_scale=[_RED, "white", _GREEN],
-                text=metric, template=_TMPL,
+                text=metric, template=_TMPL, hoverlabel=_HOVER,
                 hover_data={"Type Info": True},
             )
             fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
             fig_bar.add_vline(x=0, line_dash="dash", line_color="gray")
             fig_bar.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, use_container_width=True, config=_PCFG)
 
             st.divider()
 
@@ -772,13 +805,13 @@ with tab_corr:
                     fig_dual.add_trace(go.Bar(name=_m_early, x=_valid[date_col], y=_valid[_m_early], marker_color=_BLUE))
                     fig_dual.add_trace(go.Bar(name=_m_late,  x=_valid[date_col], y=_valid[_m_late],  marker_color=_GREEN))
                     fig_dual.update_layout(
-                        barmode="group", template=_TMPL,
+                        barmode="group", template=_TMPL, hoverlabel=_HOVER,
                         title="Price Change Around Each Event",
                         xaxis_title="Event Datetime" if date_col == "Datetime" else "Event Date",
                         yaxis_title="Price Change (%)", height=320,
                         margin=dict(l=0, r=0, t=50, b=0),
                     )
-                    st.plotly_chart(fig_dual, use_container_width=True)
+                    st.plotly_chart(fig_dual, use_container_width=True, config=_PCFG)
 
             # ── Full impact table ──
             st.subheader("Full Event Impact Table")
@@ -836,12 +869,12 @@ with tab_exchanges:
                 color="market_type",
                 title="Top 20 Markets by Volume",
                 color_discrete_map={"spot": _BLUE, "dex": _GREEN},
-                template=_TMPL,
+                template=_TMPL, hoverlabel=_HOVER,
                 labels={"volume_usd": "Volume (USD)", "exchange": ""},
             )
             fig_ex.update_layout(yaxis={"categoryorder": "total ascending"}, height=500,
                                   margin=dict(l=0, r=0, t=50, b=0))
-            st.plotly_chart(fig_ex, use_container_width=True)
+            st.plotly_chart(fig_ex, use_container_width=True, config=_PCFG)
             st.caption("Blue = centralised spot · Green = DEX")
 
         with cb:
@@ -849,14 +882,14 @@ with tab_exchanges:
                 exchange_df, path=["geography", "exchange"], values="volume_usd",
                 title="Volume by Geography & Exchange",
                 color="volume_usd", color_continuous_scale=[_BLUE, _GREEN],
-                template=_TMPL,
+                template=_TMPL, hoverlabel=_HOVER,
             )
             fig_tree.update_traces(
                 textinfo="label+percent root",
                 hovertemplate="<b>%{label}</b><br>Volume: $%{value:,.0f}<br>%{percentRoot:.1%} of total<extra></extra>",
             )
             fig_tree.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
-            st.plotly_chart(fig_tree, use_container_width=True)
+            st.plotly_chart(fig_tree, use_container_width=True, config=_PCFG)
             st.caption("Outer = geography region · Inner = exchange · Size = USD volume")
 
         _type_vol = exchange_df.groupby("market_type")["volume_usd"].sum().reset_index()
@@ -864,9 +897,9 @@ with tab_exchanges:
                           title="Spot vs DEX Volume Split",
                           color="market_type",
                           color_discrete_map={"spot": _BLUE, "dex": _GREEN},
-                          template=_TMPL, hole=0.4)
+                          template=_TMPL, hoverlabel=_HOVER, hole=0.4)
         fig_type.update_layout(margin=dict(l=0, r=0, t=50, b=0))
-        st.plotly_chart(fig_type, use_container_width=True)
+        st.plotly_chart(fig_type, use_container_width=True, config=_PCFG)
 
         st.divider()
 
@@ -896,22 +929,25 @@ with tab_exchanges:
 
         st.divider()
         st.subheader("Volume by Quote Currency (top 10)")
-        _quote_vol = (exchange_df.groupby("quote")["volume_usd"].sum()
+        # Clean DEX contract addresses → readable ticker names
+        _ex_clean = exchange_df.copy()
+        _ex_clean["quote"] = _ex_clean["quote"].replace(_QUOTE_MAP)
+        _quote_vol = (_ex_clean.groupby("quote")["volume_usd"].sum()
                       .sort_values(ascending=False).head(10).reset_index())
         fig_quote = px.bar(_quote_vol, x="quote", y="volume_usd",
                            title="Volume by Quote Currency",
-                           color_discrete_sequence=[_BLUE], template=_TMPL,
+                           color_discrete_sequence=[_BLUE], template=_TMPL, hoverlabel=_HOVER,
                            text="volume_usd",
                            labels={"volume_usd": "Volume (USD)", "quote": "Quote Currency"})
         fig_quote.update_traces(texttemplate="$%{text:,.0f}", textposition="outside")
         fig_quote.update_layout(margin=dict(l=0, r=0, t=50, b=30))
-        st.plotly_chart(fig_quote, use_container_width=True)
+        st.plotly_chart(fig_quote, use_container_width=True, config=_PCFG)
         st.caption("USDT dominance = institutional depth · KRW/TRY spikes = retail momentum (Korea/Turkey)")
 
         st.subheader("All Exchange Data")
         st.dataframe(
-            exchange_df[["exchange", "base", "quote", "volume_usd", "price_usd",
-                          "market_type", "geography"]].sort_values("volume_usd", ascending=False),
+            _ex_clean[["exchange", "base", "quote", "volume_usd", "price_usd",
+                        "market_type", "geography"]].sort_values("volume_usd", ascending=False),
             use_container_width=True,
             column_config={
                 "volume_usd": st.column_config.NumberColumn("Volume (USD)", format="$%.0f"),
@@ -968,9 +1004,9 @@ with tab_analytics:
             ))
             fig_r30.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
             fig_r30.update_layout(title="Rolling 30-Day Return (%)", xaxis_title="Date",
-                                   yaxis_title="Return (%)", template=_TMPL, height=300,
+                                   yaxis_title="Return (%)", template=_TMPL, hoverlabel=_HOVER, height=300,
                                    margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_r30, use_container_width=True)
+            st.plotly_chart(fig_r30, use_container_width=True, config=_PCFG)
 
         with col_b:
             vol7 = daily_returns.rolling(7).std()
@@ -983,9 +1019,9 @@ with tab_analytics:
                 line=dict(color=_RED, width=2),
             ))
             fig_v7.update_layout(title="7-Day Rolling Volatility", xaxis_title="Date",
-                                  yaxis_title="Std Dev of Daily Return (%)", template=_TMPL,
+                                  yaxis_title="Std Dev of Daily Return (%)", template=_TMPL, hoverlabel=_HOVER,
                                   height=300, margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_v7, use_container_width=True)
+            st.plotly_chart(fig_v7, use_container_width=True, config=_PCFG)
             st.caption("Higher volatility = larger price swings expected")
 
     st.divider()
@@ -1016,9 +1052,9 @@ with tab_analytics:
             fig_exc.update_layout(
                 title=f"Baseline-Adjusted {_t1_col} Return by Event Type",
                 xaxis_title="Event Type", yaxis_title="Excess Return (%)",
-                template=_TMPL, height=340, margin=dict(l=0, r=0, t=40, b=0),
+                template=_TMPL, hoverlabel=_HOVER, height=340, margin=dict(l=0, r=0, t=40, b=0),
             )
-            st.plotly_chart(fig_exc, use_container_width=True)
+            st.plotly_chart(fig_exc, use_container_width=True, config=_PCFG)
             st.caption(f"Returns adjusted for daily market drift of {mean_daily_return:+.2f}%. "
                        "Positive = event outperformed baseline.")
 
@@ -1055,9 +1091,9 @@ with tab_analytics:
                     yaxis2=dict(title="Weekly Return (%)", overlaying="y", side="right",
                                 showgrid=False, zeroline=False),
                     legend=dict(orientation="h", y=-0.2),
-                    template=_TMPL, height=340, margin=dict(l=0, r=0, t=40, b=40),
+                    template=_TMPL, hoverlabel=_HOVER, height=340, margin=dict(l=0, r=0, t=40, b=40),
                 )
-                st.plotly_chart(fig_cl, use_container_width=True)
+                st.plotly_chart(fig_cl, use_container_width=True, config=_PCFG)
             except Exception as _e:
                 st.info(f"Could not render event clustering chart: {_e}")
 
@@ -1083,12 +1119,12 @@ with tab_analytics:
                                     name="Volume Anomaly (>1.8× 30d avg)",
                                     marker_color=_RED, opacity=0.9))
             fig_va.update_layout(title="Daily Volume with Anomaly Detection",
-                                  barmode="overlay", template=_TMPL, height=300,
+                                  barmode="overlay", template=_TMPL, hoverlabel=_HOVER, height=300,
                                   margin=dict(l=0, r=0, t=40, b=0))
 
             vc, vm = st.columns([4, 1])
             with vc:
-                st.plotly_chart(fig_va, use_container_width=True)
+                st.plotly_chart(fig_va, use_container_width=True, config=_PCFG)
             with vm:
                 st.metric("Anomaly Days", _anom_count,
                           help="Days where volume exceeded 1.8× the 30-day rolling average")
@@ -1192,9 +1228,9 @@ with tab_risk:
                 fig_hm = px.imshow(_hm, color_continuous_scale="RdYlGn",
                                    labels=dict(x="Sentiment", y="Event Type", color="Count"),
                                    title="Event Type × Sentiment Count",
-                                   template=_TMPL, aspect="auto")
+                                   template=_TMPL, hoverlabel=_HOVER, aspect="auto")
                 fig_hm.update_layout(height=360, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_hm, use_container_width=True)
+                st.plotly_chart(fig_hm, use_container_width=True, config=_PCFG)
             except Exception as _e:
                 st.info(f"Could not render heatmap: {_e}")
 
@@ -1257,10 +1293,10 @@ with tab_risk:
                                          annotation_text="50% baseline")
                         fig_sq.update_layout(
                             title="% of Prior-7-Day Events with Positive Next-Day Return",
-                            yaxis=dict(range=[0, 105]), template=_TMPL, height=260,
+                            yaxis=dict(range=[0, 105]), template=_TMPL, hoverlabel=_HOVER, height=260,
                             margin=dict(l=0, r=0, t=40, b=0),
                         )
-                        st.plotly_chart(fig_sq, use_container_width=True)
+                        st.plotly_chart(fig_sq, use_container_width=True, config=_PCFG)
                         _sq_rendered = True
             except Exception:
                 pass
@@ -1293,11 +1329,11 @@ with tab_risk:
                                    annotation_text="50% baseline")
                 fig_pat.update_layout(
                     title="% of Events Where Price Rose the Next Day",
-                    xaxis=dict(range=[0, 115]), template=_TMPL,
+                    xaxis=dict(range=[0, 115]), template=_TMPL, hoverlabel=_HOVER,
                     height=max(260, 40 * len(_pat) + 80),
                     margin=dict(l=0, r=60, t=40, b=0),
                 )
-                st.plotly_chart(fig_pat, use_container_width=True)
+                st.plotly_chart(fig_pat, use_container_width=True, config=_PCFG)
                 st.dataframe(_pat.sort_values("Avg T+1d %", ascending=False),
                              use_container_width=True, hide_index=True)
                 st.caption("⚠️ T+1d returns include overall market trend — does not prove causation.")

@@ -438,15 +438,17 @@ with tab_corr:
     else:
         # Choose hourly if available, fall back to daily
         if not hourly_df.empty:
-            impact_df = compute_impact_rows_hourly(hourly_df, events_df)
+            impact_df = compute_impact_rows_hourly(hourly_df, events_df, price_df)
             available_metrics = HOURLY_METRICS
             date_col = "Datetime"
-            st.caption("Using hourly price data. Metrics: T+1h, T+4h, T+12h, T+24h, T+3d.")
+            hourly_count = (impact_df["Resolution"] == "hourly").sum() if "Resolution" in impact_df.columns else 0
+            daily_count  = (impact_df["Resolution"] == "daily").sum()  if "Resolution" in impact_df.columns else 0
+            st.caption(f"{hourly_count} events matched hourly (T+1h–T+3d) · {daily_count} older events matched daily (T+24h, T+3d only)")
         else:
             impact_df = compute_impact_rows(price_df, events_df)
             available_metrics = DAILY_METRICS
             date_col = "Date"
-            st.caption("Hourly data not loaded — using daily. Click **Refresh Hourly Prices** for finer resolution.")
+            st.caption("Hourly data not loaded — using daily. Click **⏱️ Refresh Hourly Prices** for finer resolution.")
 
         if impact_df.empty:
             st.warning("No events overlap with the price data range. Try refreshing hourly prices.")

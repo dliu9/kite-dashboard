@@ -91,18 +91,25 @@ def _round_to_hour(dt_str: str):
         return None
 
 
-def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.DataFrame) -> pd.DataFrame:
+def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.DataFrame,
+                               price_daily_df: pd.DataFrame = None) -> pd.DataFrame:
     """
-    Hourly-resolution correlation.
-    Offsets: T+1h, T+4h, T+12h, T+24h, T+3d (72h).
-    Matches each event's datetime to the nearest hourly price bucket.
-    Vol spike is vs 24-hour pre-event average.
+    Hourly-resolution correlation with daily fallback for older events.
+    - Events within hourly range: T+1h, T+4h, T+12h, T+24h, T+3d
+    - Events outside hourly range: T+24h (≈T+1d) and T+3d from daily data
+    Resolution column indicates which path was used.
     """
-    if price_hourly_df.empty or events_df.empty:
+    if events_df.empty:
+        return pd.DataFrame()
+    if price_hourly_df.empty and (price_daily_df is None or price_daily_df.empty):
         return pd.DataFrame()
 
-    price_idx = price_hourly_df.sort_values("datetime").set_index("datetime")
-    hours_sorted = sorted(price_idx.index.tolist())
+    price_idx    = price_hourly_df.sort_values("datetime").set_index("datetime") if not price_hourly_df.empty else pd.DataFrame()
+    hours_sorted = sorted(price_idx.index.tolist()) if not price_idx.empty else []
+
+    daily_df  = price_daily_df if price_daily_df is not None else pd.DataFrame()
+    daily_idx = daily_df.sort_values("date").set_index("date") if not daily_df.empty else pd.DataFrame()
+    dates_sorted = sorted(daily_idx.index.tolist()) if not daily_idx.empty else []
 
     def price_at_offset(ev_pos: int, n: int):
         idx = ev_pos + n
@@ -122,42 +129,75 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
 
         ev_hour = _round_to_hour(raw_dt)
         if not ev_hour or ev_hour not in price_idx.index:
-            continue
-
-        ev_pos   = hours_sorted.index(ev_hour)
-        ev_price = price_idx.loc[ev_hour, "price_usd"]
-        ev_vol   = price_idx.loc[ev_hour, "volume_24h"]
-
-        p1h  = price_at_offset(ev_pos, 1)
-        p4h  = price_at_offset(ev_pos, 4)
-        p12h = price_at_offset(ev_pos, 12)
-        p24h = price_at_offset(ev_pos, 24)
-        p3d  = price_at_offset(ev_pos, 72)
-
-        # Vol spike vs 24h pre-event average
-        pre_vols = [
-            price_idx.loc[h, "volume_24h"]
-            for h in hours_sorted[max(0, ev_pos - 24):ev_pos]
-            if pd.notna(price_idx.loc[h, "volume_24h"])
-        ]
-        avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
-        vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0
+            ev_hour = None  # handled below as daily fallback
 
         ev_type = ev.get("event_type", "")
-        impact_rows.append({
+        base_row = {
             "ID":          ev.get("id"),
-            "Datetime":    ev_hour,
             "Event Type":  ev_type,
             "Type Info":   EVENT_DESCRIPTIONS.get(ev_type, ""),
             "Description": (ev.get("description") or "")[:70],
             "Sentiment":   ev.get("sentiment_label", "neutral"),
-            "Price":       round(ev_price, 5),
-            "T+1h %":      pct(p1h,  ev_price),
-            "T+4h %":      pct(p4h,  ev_price),
-            "T+12h %":     pct(p12h, ev_price),
-            "T+24h %":     pct(p24h, ev_price),
-            "T+3d %":      pct(p3d,  ev_price),
-            "Vol Spike %": round(vol_spike_pct, 1),
-        })
+        }
+
+        if ev_hour:
+            # ── Hourly path ──
+            ev_pos   = hours_sorted.index(ev_hour)
+            ev_price = price_idx.loc[ev_hour, "price_usd"]
+            ev_vol   = price_idx.loc[ev_hour, "volume_24h"]
+
+            pre_vols = [
+                price_idx.loc[h, "volume_24h"]
+                for h in hours_sorted[max(0, ev_pos - 24):ev_pos]
+                if pd.notna(price_idx.loc[h, "volume_24h"])
+            ]
+            avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
+            vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0
+
+            impact_rows.append({
+                **base_row,
+                "Datetime":    ev_hour,
+                "Resolution":  "hourly",
+                "Price":       round(ev_price, 5),
+                "T+1h %":      pct(price_at_offset(ev_pos, 1),  ev_price),
+                "T+4h %":      pct(price_at_offset(ev_pos, 4),  ev_price),
+                "T+12h %":     pct(price_at_offset(ev_pos, 12), ev_price),
+                "T+24h %":     pct(price_at_offset(ev_pos, 24), ev_price),
+                "T+3d %":      pct(price_at_offset(ev_pos, 72), ev_price),
+                "Vol Spike %": round(vol_spike_pct, 1),
+            })
+        else:
+            # ── Daily fallback for events outside hourly range ──
+            ev_date = ev.get("date", "")
+            if ev_date not in daily_idx.index:
+                continue
+            ev_price = daily_idx.loc[ev_date, "price_usd"]
+            ev_vol   = daily_idx.loc[ev_date, "volume_24h"]
+            d_pos    = dates_sorted.index(ev_date)
+
+            def dprice(n):
+                i = d_pos + n
+                return daily_idx.loc[dates_sorted[i], "price_usd"] if 0 <= i < len(dates_sorted) else None
+
+            pre_vols = [
+                daily_idx.loc[d, "volume_24h"]
+                for d in dates_sorted[max(0, d_pos - 7):d_pos]
+                if pd.notna(daily_idx.loc[d, "volume_24h"])
+            ]
+            avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
+            vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0
+
+            impact_rows.append({
+                **base_row,
+                "Datetime":    ev_date,
+                "Resolution":  "daily",
+                "Price":       round(ev_price, 5),
+                "T+1h %":      None,
+                "T+4h %":      None,
+                "T+12h %":     None,
+                "T+24h %":     pct(dprice(1), ev_price),   # T+1d ≈ T+24h
+                "T+3d %":      pct(dprice(3), ev_price),
+                "Vol Spike %": round(vol_spike_pct, 1),
+            })
 
     return pd.DataFrame(impact_rows)

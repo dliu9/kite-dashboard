@@ -22,57 +22,159 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── KITE Cyber Dark Theme ─────────────────────────────────────────────────── */
-html, body, .stApp { background-color: #07071A !important; }
-.main .block-container { background-color: #07071A; padding-top: 1.5rem; }
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0A0A20 0%, #07071A 100%) !important;
+/* ══════════════════════════════════════════════════════════════
+   KITE CYBER DARK THEME — complete coverage
+   bg: #07071A  panel: #0D0D28  border: #1C1C42  cyan: #00E5FF
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Global backgrounds ── */
+html, body, .stApp, [data-testid="stAppViewContainer"],
+[data-testid="stMain"], .main { background-color: #07071A !important; }
+.main .block-container { background-color: #07071A !important; padding-top: 1.5rem; }
+[data-testid="stVerticalBlock"] { background-color: transparent !important; }
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div,
+section[data-testid="stSidebar"] > div > div {
+    background: #0A0A20 !important;
     border-right: 1px solid #1C1C42 !important;
 }
+section[data-testid="stSidebar"] * { color: #8899CC !important; }
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] .stTitle { color: #00E5FF !important; }
+section[data-testid="stSidebar"] label { color: #6B82C0 !important; }
+section[data-testid="stSidebar"] small,
+section[data-testid="stSidebar"] .stCaption { color: #445580 !important; }
 
-/* Metric cards — glassy dark panels with cyan glow border */
-[data-testid="metric-container"] {
-    background: linear-gradient(135deg, #0D0D28 0%, #111135 100%);
-    border: 1px solid rgba(0, 229, 255, 0.18);
-    border-radius: 10px;
-    padding: 14px 16px;
-    box-shadow: 0 0 16px rgba(0, 229, 255, 0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+/* ── Typography ── */
+h1, h2 { color: #E0EAFF !important; font-family: 'Syne', sans-serif !important; letter-spacing: -0.01em; }
+h3 { color: #8AA8FF !important; font-family: 'Syne', sans-serif !important; }
+h4, h5, h6 { color: #6B82C0 !important; }
+p, div.stMarkdown p, .stCaption, small { color: #7A8FBF !important; }
+label { color: #7A8FBF !important; }
+
+/* ── All form input fields (text, number, date) ── */
+input, textarea,
+[data-baseweb="input"] input,
+[data-baseweb="base-input"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {
+    background-color: #0D0D28 !important;
+    color: #E0EAFF !important;
+    border-color: #1C1C42 !important;
+    caret-color: #00E5FF;
 }
-[data-testid="metric-container"] label { color: #6B82C0 !important; font-size: 0.77rem !important; letter-spacing: 0.04em; text-transform: uppercase; }
-[data-testid="metric-container"] [data-testid="metric-value"] { color: #E0EAFF !important; font-family: 'JetBrains Mono', monospace !important; }
-[data-testid="metric-container"] [data-testid="metric-delta"] { font-size: 0.8rem; }
+[data-baseweb="base-input"],
+[data-baseweb="input"] {
+    background-color: #0D0D28 !important;
+    border-color: #1C1C42 !important;
+}
+[data-baseweb="base-input"]:focus-within,
+[data-baseweb="input"]:focus-within { border-color: #00E5FF !important; box-shadow: 0 0 0 2px rgba(0,229,255,0.15) !important; }
 
-/* Tabs */
+/* ── Select boxes ── */
+[data-baseweb="select"] > div,
+.stSelectbox [data-baseweb="select"] > div {
+    background-color: #0D0D28 !important;
+    border-color: #1C1C42 !important;
+    color: #E0EAFF !important;
+}
+[data-baseweb="select"] span,
+[data-baseweb="select"] div[class*="singleValue"],
+[data-baseweb="select"] div[class*="placeholder"] { color: #E0EAFF !important; }
+[data-baseweb="select"] svg { fill: #5B6FA8 !important; }
+
+/* ── Dropdown popovers (select options) ── */
+[data-baseweb="popover"],
+[data-baseweb="menu"],
+ul[data-baseweb="menu"],
+[role="listbox"] {
+    background-color: #111135 !important;
+    border: 1px solid #1C1C42 !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+}
+[role="option"], li[role="option"] {
+    background-color: #111135 !important;
+    color: #C0CCEE !important;
+}
+[role="option"]:hover,
+li[role="option"]:hover,
+[aria-selected="true"] {
+    background-color: #1C1C42 !important;
+    color: #00E5FF !important;
+}
+
+/* ── Radio buttons ── */
+[data-testid="stRadio"] > label { color: #7A8FBF !important; }
+[data-testid="stRadio"] [role="radiogroup"] div { color: #C0CCEE !important; }
+[data-testid="stRadio"] [role="radiogroup"] label { color: #C0CCEE !important; }
+[data-testid="stRadio"] [data-baseweb="radio"] div[role="radio"] {
+    border-color: #1C1C42 !important;
+    background: #0D0D28 !important;
+}
+[data-testid="stRadio"] [data-baseweb="radio"][data-checked="true"] div[role="radio"],
+[data-testid="stRadio"] input:checked + div { border-color: #00E5FF !important; }
+
+/* ── Toggle / Checkbox ── */
+[data-baseweb="checkbox"] div, [data-baseweb="toggle"] {
+    background-color: #1C1C42 !important;
+    border-color: #2A2A5A !important;
+}
+[data-baseweb="checkbox"][data-checked="true"] div,
+[data-baseweb="toggle"][data-checked="true"] { background-color: #00E5FF !important; }
+[data-testid="stToggle"] label { color: #C0CCEE !important; }
+
+/* ── Sliders ── */
+[data-testid="stSlider"] [role="slider"] { background: #00E5FF !important; border-color: #00E5FF !important; }
+[data-testid="stSlider"] [data-testid="stSliderTrack"] { background: #1C1C42 !important; }
+[data-testid="stSelectSlider"] [role="slider"] { background: #9D4EDD !important; }
+
+/* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] { gap: 6px; background: transparent; border-bottom: 1px solid #1C1C42; }
 .stTabs [data-baseweb="tab"] {
-    background: #0D0D28;
+    background: #0D0D28 !important;
     border: 1px solid #1C1C42;
     border-bottom: none;
     border-radius: 8px 8px 0 0;
-    color: #5B6FA8;
+    color: #5B6FA8 !important;
     font-weight: 500;
     font-family: 'Syne', sans-serif;
     transition: color 0.2s;
 }
 .stTabs [aria-selected="true"] {
-    background: #111135;
+    background: #111135 !important;
     border-color: #2A2A5A;
-    border-bottom: 2px solid #00E5FF;
+    border-bottom: 2px solid #00E5FF !important;
     color: #00E5FF !important;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #9BE8FF; }
+.stTabs [data-baseweb="tab"]:hover { color: #9BE8FF !important; }
+[data-baseweb="tab-panel"] { background: transparent !important; }
 
-/* Typography */
-h1, h2 { color: #E0EAFF !important; font-family: 'Syne', sans-serif !important; letter-spacing: -0.01em; }
-h3 { color: #8AA8FF !important; font-family: 'Syne', sans-serif !important; }
-p, .stMarkdown, .stCaption { color: #7A8FBF !important; }
-label, .stRadio label, .stSelectbox label { color: #7A8FBF !important; }
+/* ── Metric cards ── */
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #0D0D28 0%, #111135 100%) !important;
+    border: 1px solid rgba(0,229,255,0.18) !important;
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 0 16px rgba(0,229,255,0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+[data-testid="metric-container"] label { color: #6B82C0 !important; font-size: 0.77rem !important; letter-spacing: 0.04em; text-transform: uppercase; }
+[data-testid="metric-container"] [data-testid="metric-value"] { color: #E0EAFF !important; font-family: 'JetBrains Mono', monospace !important; }
+[data-testid="metric-container"] [data-testid="metric-delta"] { font-size: 0.8rem; }
 
-/* Dividers & DataFrames */
+/* ── DataFrames ── */
 hr { border-color: #1C1C42 !important; }
-.stDataFrame { border: 1px solid #1C1C42 !important; border-radius: 8px; background: #0D0D28; }
+[data-testid="stDataFrame"],
+[data-testid="stDataFrame"] > div,
+[data-testid="stDataFrame"] iframe,
+.stDataFrame { border: 1px solid #1C1C42 !important; border-radius: 8px !important; background: #0D0D28 !important; }
+/* inner canvas rows of streamlit dataframe */
+[data-testid="data-grid-canvas"] { background: #0D0D28 !important; }
 
-/* Buttons */
+/* ── Buttons ── */
 .stButton button {
     background: linear-gradient(135deg, #0D0D28, #161648) !important;
     border: 1px solid rgba(0,229,255,0.3) !important;
@@ -82,24 +184,34 @@ hr { border-color: #1C1C42 !important; }
     letter-spacing: 0.03em;
     transition: box-shadow 0.2s, border-color 0.2s;
 }
-.stButton button:hover {
-    border-color: #00E5FF !important;
-    box-shadow: 0 0 14px rgba(0,229,255,0.28) !important;
-}
-button[kind="primary"] {
-    background: linear-gradient(135deg, #00B4CC, #0070AA) !important;
-    border: none !important;
+.stButton button:hover { border-color: #00E5FF !important; box-shadow: 0 0 14px rgba(0,229,255,0.28) !important; }
+button[kind="primary"],
+[data-testid="stButton"] button[kind="primary"] {
+    background: linear-gradient(135deg, #0096AA, #005F88) !important;
+    border: 1px solid #00E5FF44 !important;
     color: #ffffff !important;
     box-shadow: 0 0 18px rgba(0,229,255,0.22) !important;
 }
 
-/* Sidebar text */
-section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] p { color: #8899CC !important; }
-section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2 { color: #00E5FF !important; }
-section[data-testid="stSidebar"] label { color: #7A8FBF !important; }
+/* ── Alerts / info boxes ── */
+[data-testid="stNotification"], [data-testid="stAlert"], .stAlert {
+    border-radius: 8px !important;
+    border-left-width: 3px !important;
+    background: #0D0D28 !important;
+}
 
-/* Info/warning/success boxes */
-.stAlert { border-radius: 8px !important; border-left-width: 3px !important; }
+/* ── Expanders ── */
+[data-testid="stExpander"] { border-color: #1C1C42 !important; background: #0D0D28 !important; border-radius: 8px !important; }
+[data-testid="stExpander"] summary { color: #8AA8FF !important; }
+
+/* ── Progress bar (ProgressColumn in dataframe) ── */
+[role="progressbar"] > div { background: linear-gradient(90deg, #00E5FF, #9D4EDD) !important; }
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #07071A; }
+::-webkit-scrollbar-thumb { background: #1C1C42; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2A2A5A; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -329,6 +441,21 @@ def _pct_styler(df, cols):
     return df.style.format({c: _fmt for c in present}).map(_clr, subset=present)
 
 
+def _apply_dark(fig):
+    """Apply consistent cyber-dark panel styling to every Plotly figure."""
+    fig.update_layout(
+        plot_bgcolor=_PANEL,
+        paper_bgcolor=_BG,
+        font_color="#E0EAFF",
+        title_font_color="#E0EAFF",
+        legend=dict(bgcolor="rgba(13,13,40,0.8)", bordercolor=_GRID, borderwidth=1, font_color="#C0CCEE"),
+    )
+    fig.update_xaxes(gridcolor=_GRID, zerolinecolor=_GRID, linecolor=_GRID, tickfont_color="#7A8FBF", title_font_color="#8AA8FF")
+    fig.update_yaxes(gridcolor=_GRID, zerolinecolor=_GRID, linecolor=_GRID, tickfont_color="#7A8FBF", title_font_color="#8AA8FF")
+    return fig
+
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_overview, tab_events, tab_corr, tab_exchanges, tab_analytics, tab_risk = st.tabs([
     "📊 Overview", "📅 Events", "🔗 Correlation",
@@ -490,6 +617,7 @@ with tab_overview:
             xaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
             yaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
         )
+        _apply_dark(fig)
         st.plotly_chart(fig, use_container_width=True, config=_PCFG)
 
         # Event marker legend
@@ -577,6 +705,7 @@ with tab_overview:
             showlegend=False,
         )
         st.caption("■ Cyan = price up day  ■ Purple = price down day")
+        _apply_dark(fig_vol)
         st.plotly_chart(fig_vol, use_container_width=True, config=_PCFG)
 
         # ── Trend summary ──
@@ -701,6 +830,7 @@ with tab_events:
             )
             fig_hbar.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0),
                                    showlegend=False, coloraxis_showscale=False)
+            _apply_dark(fig_hbar)
             st.plotly_chart(fig_hbar, use_container_width=True, config=_PCFG)
 
         with cb:
@@ -725,6 +855,7 @@ with tab_events:
                     title="Events per Month", template=_TMPL, hoverlabel=_HOVER, height=320,
                     margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
                 )
+                _apply_dark(fig_monthly)
                 st.plotly_chart(fig_monthly, use_container_width=True, config=_PCFG)
             except Exception:
                 st.caption("Monthly frequency chart unavailable.")
@@ -740,6 +871,7 @@ with tab_events:
                 template=_TMPL, hole=0.4,
             )
             fig_sent.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
+            _apply_dark(fig_sent)
             st.plotly_chart(fig_sent, use_container_width=True, config=_PCFG)
 
 
@@ -836,6 +968,7 @@ with tab_corr:
                     template=_TMPL,
                 )
                 fig_heat.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+                _apply_dark(fig_heat)
                 st.plotly_chart(fig_heat, use_container_width=True, config=_PCFG)
                 st.caption("Each cell = mean price change (%) for that event type and time window. Green = rose, Red = fell.")
             else:
@@ -859,6 +992,7 @@ with tab_corr:
             fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
             fig_bar.add_vline(x=0, line_dash="dash", line_color="gray")
             fig_bar.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
+            _apply_dark(fig_bar)
             st.plotly_chart(fig_bar, use_container_width=True, config=_PCFG)
 
             st.divider()
@@ -905,6 +1039,7 @@ with tab_corr:
                         yaxis_title="Price Change (%)", height=320,
                         margin=dict(l=0, r=0, t=50, b=0),
                     )
+                    _apply_dark(fig_dual)
                     st.plotly_chart(fig_dual, use_container_width=True, config=_PCFG)
 
             # ── Full impact table ──
@@ -968,6 +1103,7 @@ with tab_exchanges:
             )
             fig_ex.update_layout(yaxis={"categoryorder": "total ascending"}, height=500,
                                   margin=dict(l=0, r=0, t=50, b=0))
+            _apply_dark(fig_ex)
             st.plotly_chart(fig_ex, use_container_width=True, config=_PCFG)
             st.caption("Blue = centralised spot · Green = DEX")
 
@@ -983,6 +1119,7 @@ with tab_exchanges:
                 hovertemplate="<b>%{label}</b><br>Volume: $%{value:,.0f}<br>%{percentRoot:.1%} of total<extra></extra>",
             )
             fig_tree.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
+            _apply_dark(fig_tree)
             st.plotly_chart(fig_tree, use_container_width=True, config=_PCFG)
             st.caption("Outer = geography region · Inner = exchange · Size = USD volume")
 
@@ -993,6 +1130,7 @@ with tab_exchanges:
                           color_discrete_map={"spot": _BLUE, "dex": _GREEN},
                           template=_TMPL, hole=0.4)
         fig_type.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+        _apply_dark(fig_type)
         st.plotly_chart(fig_type, use_container_width=True, config=_PCFG)
 
         st.divider()
@@ -1036,6 +1174,7 @@ with tab_exchanges:
                            labels={"volume_usd": "Volume (USD)", "quote": "Quote Currency"})
         fig_quote.update_traces(texttemplate="$%{text:,.0f}", textposition="outside")
         fig_quote.update_layout(margin=dict(l=0, r=0, t=50, b=30))
+        _apply_dark(fig_quote)
         st.plotly_chart(fig_quote, use_container_width=True, config=_PCFG)
         st.caption("USDT dominance = institutional depth · KRW/TRY spikes = retail momentum (Korea/Turkey)")
 
@@ -1101,6 +1240,7 @@ with tab_analytics:
             fig_r30.update_layout(title="Rolling 30-Day Return (%)", xaxis_title="Date",
                                    yaxis_title="Return (%)", template=_TMPL, hoverlabel=_HOVER, height=300,
                                    margin=dict(l=0, r=0, t=40, b=0))
+            _apply_dark(fig_r30)
             st.plotly_chart(fig_r30, use_container_width=True, config=_PCFG)
 
         with col_b:
@@ -1116,6 +1256,7 @@ with tab_analytics:
             fig_v7.update_layout(title="7-Day Rolling Volatility", xaxis_title="Date",
                                   yaxis_title="Std Dev of Daily Return (%)", template=_TMPL, hoverlabel=_HOVER,
                                   height=300, margin=dict(l=0, r=0, t=40, b=0))
+            _apply_dark(fig_v7)
             st.plotly_chart(fig_v7, use_container_width=True, config=_PCFG)
             st.caption("Higher volatility = larger price swings expected")
 
@@ -1149,6 +1290,7 @@ with tab_analytics:
                 xaxis_title="Event Type", yaxis_title="Excess Return (%)",
                 template=_TMPL, hoverlabel=_HOVER, height=340, margin=dict(l=0, r=0, t=40, b=0),
             )
+            _apply_dark(fig_exc)
             st.plotly_chart(fig_exc, use_container_width=True, config=_PCFG)
             st.caption(f"Returns adjusted for daily market drift of {mean_daily_return:+.2f}%. "
                        "Positive = event outperformed baseline.")
@@ -1188,6 +1330,7 @@ with tab_analytics:
                     legend=dict(orientation="h", y=-0.2),
                     template=_TMPL, hoverlabel=_HOVER, height=340, margin=dict(l=0, r=0, t=40, b=40),
                 )
+                _apply_dark(fig_cl)
                 st.plotly_chart(fig_cl, use_container_width=True, config=_PCFG)
             except Exception as _e:
                 st.info(f"Could not render event clustering chart: {_e}")
@@ -1219,6 +1362,7 @@ with tab_analytics:
 
             vc, vm = st.columns([4, 1])
             with vc:
+                _apply_dark(fig_va)
                 st.plotly_chart(fig_va, use_container_width=True, config=_PCFG)
             with vm:
                 st.metric("Anomaly Days", _anom_count,
@@ -1325,6 +1469,7 @@ with tab_risk:
                                    title="Event Type × Sentiment Count",
                                    template=_TMPL, aspect="auto")
                 fig_hm.update_layout(height=360, margin=dict(l=0, r=0, t=40, b=0))
+                _apply_dark(fig_hm)
                 st.plotly_chart(fig_hm, use_container_width=True, config=_PCFG)
             except Exception as _e:
                 st.info(f"Could not render heatmap: {_e}")
@@ -1391,6 +1536,7 @@ with tab_risk:
                             yaxis=dict(range=[0, 105]), template=_TMPL, hoverlabel=_HOVER, height=260,
                             margin=dict(l=0, r=0, t=40, b=0),
                         )
+                        _apply_dark(fig_sq)
                         st.plotly_chart(fig_sq, use_container_width=True, config=_PCFG)
                         _sq_rendered = True
             except Exception:
@@ -1428,6 +1574,7 @@ with tab_risk:
                     height=max(260, 40 * len(_pat) + 80),
                     margin=dict(l=0, r=60, t=40, b=0),
                 )
+                _apply_dark(fig_pat)
                 st.plotly_chart(fig_pat, use_container_width=True, config=_PCFG)
                 st.dataframe(_pct_styler(_pat.sort_values("Avg T+1d %", ascending=False), ["Avg T+1d %"]),
                              use_container_width=True, hide_index=True)

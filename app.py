@@ -20,8 +20,31 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-[data-testid="metric-container"] { background: #1a1a2e; border-radius: 8px; padding: 12px; }
-.stTabs [data-baseweb="tab-list"] { gap: 8px; }
+/* Google Analytics-style clean light theme */
+.main { background-color: #f8f9fa; }
+[data-testid="metric-container"] {
+    background: #ffffff;
+    border: 1px solid #e8eaed;
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+[data-testid="metric-container"] [data-testid="metric-delta"] { font-size: 0.8rem; }
+.stTabs [data-baseweb="tab-list"] { gap: 8px; background: #f8f9fa; }
+.stTabs [data-baseweb="tab"] {
+    background: #ffffff;
+    border: 1px solid #e8eaed;
+    border-radius: 6px 6px 0 0;
+    color: #5f6368;
+    font-weight: 500;
+}
+.stTabs [aria-selected="true"] {
+    background: #ffffff;
+    border-bottom: 2px solid #1a73e8;
+    color: #1a73e8;
+}
+h1, h2, h3 { color: #202124; }
+.stDataFrame { border: 1px solid #e8eaed; border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,11 +200,24 @@ _hourly_end = (end_date + timedelta(days=3)).strftime("%Y-%m-%d") + " 23:59"
 hourly_df = db.get_hourly_prices(start_str, _hourly_end)
 events_df = db.get_events(start_str, end_str)
 exchange_df = db.get_latest_exchange_snapshots()
-current = fetcher.get_current_snapshot()
+
+@st.cache_data(ttl=300)
+def get_current_snapshot_cached():
+    return fetcher.get_current_snapshot()
+
+current = get_current_snapshot_cached()
+
+# ── Colour palette & chart template (GA style) ────────────────────────────────
+_BLUE   = "#1a73e8"
+_GREEN  = "#34a853"
+_RED    = "#ea4335"
+_YELLOW = "#fbbc04"
+_TMPL   = "plotly_white"
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_overview, tab_events, tab_corr, tab_exchanges, tab_risk = st.tabs([
-    "📊 Overview", "📅 Events", "🔗 Correlation", "🏦 Exchanges", "⚠️ Risk & Signals"
+tab_overview, tab_events, tab_corr, tab_exchanges, tab_analytics, tab_risk = st.tabs([
+    "📊 Overview", "📅 Events", "🔗 Correlation",
+    "🏦 Exchanges", "📈 Analytics", "⚠️ Risk & Signals"
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -226,22 +262,50 @@ with tab_overview:
         chart_df = hourly_df if use_hourly else price_df
         x_col    = "datetime" if use_hourly else "date"
 
+        # ── Price chart with 7-day moving average and event markers ──
+        st.subheader("Price Trend with Event Impact")
+
         fig = go.Figure()
+
+        # Main price line
         fig.add_trace(go.Scatter(
             x=chart_df[x_col], y=chart_df["price_usd"],
             mode="lines", name="Price (USD)",
-            line=dict(color="#7c3aed", width=1.5 if use_hourly else 2),
-            fill="tozeroy", fillcolor="rgba(124,58,237,0.08)",
+            line=dict(color=_BLUE, width=1.5 if use_hourly else 2),
+            fill="tozeroy", fillcolor="rgba(26,115,232,0.08)",
         ))
 
-        # Overlay event markers
-        sentiment_colors = {"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"}
+        # 7-day / 168-hour moving average
+        if len(chart_df) > 7:
+            ma_window = 168 if use_hourly else 7
+            ma = chart_df["price_usd"].rolling(window=ma_window).mean()
+            fig.add_trace(go.Scatter(
+                x=chart_df[x_col], y=ma,
+                mode="lines", name="7-day MA",
+                line=dict(color=_GREEN, width=2, dash="dash"),
+                fill=None,
+            ))
+
+        # Event markers with different shapes per event type
+        sentiment_colors = {"positive": _GREEN, "negative": _RED, "neutral": _YELLOW}
+        event_type_symbols = {
+            "Partnership": "diamond",
+            "Milestone": "star",
+            "Listing": "triangle-up",
+            "Funding": "circle",
+            "Announcement": "square",
+            "Community": "cross",
+            "Product Launch": "hexagon",
+            "Airdrop": "bowtie",
+            "Security": "x",
+            "Regulation": "triangle-down",
+        }
+
         if not events_df.empty:
             if use_hourly:
                 h_indexed = hourly_df.set_index("datetime")["price_usd"]
                 for _, ev in events_df.iterrows():
                     dt_str = (ev.get("datetime_str") or ev["date"] + " 00:00:00")
-                    # round to hour
                     try:
                         from datetime import datetime as _dt
                         d = _dt.strptime(dt_str[:16], "%Y-%m-%d %H:%M")
@@ -255,16 +319,17 @@ with tab_overview:
                         continue
                     if ev_hour not in h_indexed.index:
                         continue
-                    color = sentiment_colors.get(ev.get("sentiment_label"), "#f59e0b")
+                    color = sentiment_colors.get(ev.get("sentiment_label"), _YELLOW)
                     ev_type = ev.get("event_type", "")
+                    symbol = event_type_symbols.get(ev_type, "star")
                     type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
                     fig.add_trace(go.Scatter(
                         x=[ev_hour], y=[h_indexed[ev_hour]],
                         mode="markers",
-                        marker=dict(size=14, color=color, symbol="star",
-                                    line=dict(color="white", width=1)),
+                        marker=dict(size=12, color=color, symbol=symbol,
+                                    line=dict(color="white", width=1.5)),
                         name=ev_type,
-                        text=[f"{ev.get('description','')[:80]}<br><i>{type_desc}</i>"],
+                        text=[f"{ev.get('description','')[:60]}<br><i>{type_desc}</i>"],
                         hovertemplate=(
                             f"<b>{ev_type}</b><br>"
                             f"{ev_hour}<br>"
@@ -278,16 +343,17 @@ with tab_overview:
                 for _, ev in events_df.iterrows():
                     if ev["date"] not in price_indexed.index:
                         continue
-                    color = sentiment_colors.get(ev.get("sentiment_label"), "#f59e0b")
+                    color = sentiment_colors.get(ev.get("sentiment_label"), _YELLOW)
                     ev_type = ev.get("event_type", "")
+                    symbol = event_type_symbols.get(ev_type, "star")
                     type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
                     fig.add_trace(go.Scatter(
                         x=[ev["date"]], y=[price_indexed[ev["date"]]],
                         mode="markers",
-                        marker=dict(size=14, color=color, symbol="star",
-                                    line=dict(color="white", width=1)),
+                        marker=dict(size=12, color=color, symbol=symbol,
+                                    line=dict(color="white", width=1.5)),
                         name=ev_type,
-                        text=[f"{ev.get('description','')[:80]}<br><i>{type_desc}</i>"],
+                        text=[f"{ev.get('description','')[:60]}<br><i>{type_desc}</i>"],
                         hovertemplate=(
                             f"<b>{ev_type}</b><br>"
                             f"{ev['date']}<br>"
@@ -302,24 +368,93 @@ with tab_overview:
             title=title,
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Price (USD)",
-            hovermode="x unified", template="plotly_dark",
+            hovermode="x unified", template=_TMPL,
             height=460, margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Volume chart ──
+        # Event marker legend
+        if not events_df.empty:
+            present_types = events_df["event_type"].dropna().unique().tolist()
+            legend_parts = [
+                f"{k} = {v.replace('-', ' ')}"
+                for k, v in event_type_symbols.items()
+                if k in present_types
+            ]
+            if legend_parts:
+                st.caption("**Event Shapes:** " + " | ".join(legend_parts) +
+                           " · Colors: 🟢 Positive  🔴 Negative  🟡 Neutral")
+
+        # ── Performance Summary ──
+        if not chart_df.empty:
+            st.subheader("Period Performance Summary")
+            period_high = chart_df["price_usd"].max()
+            period_low  = chart_df["price_usd"].min()
+
+            try:
+                if use_hourly:
+                    _cd = chart_df.copy()
+                    _cd["_day"] = pd.to_datetime(_cd["datetime"]).dt.date
+                    daily_data = _cd.groupby("_day")["price_usd"].agg(["first", "last"])
+                    daily_data["pct_change"] = (daily_data["last"] / daily_data["first"] - 1) * 100
+                else:
+                    _cd = chart_df[["price_usd"]].copy()
+                    _cd["pct_change"] = _cd["price_usd"].pct_change() * 100
+                    daily_data = _cd
+                best_day_pct  = daily_data["pct_change"].max()
+                worst_day_pct = daily_data["pct_change"].min()
+            except Exception:
+                best_day_pct = worst_day_pct = 0.0
+
+            pc1, pc2, pc3, pc4 = st.columns(4)
+            pc1.metric("Period High",  f"${period_high:.4f}")
+            pc2.metric("Period Low",   f"${period_low:.4f}")
+            pc3.metric("Best Day %",   f"{best_day_pct:+.2f}%")
+            pc4.metric("Worst Day %",  f"{worst_day_pct:+.2f}%")
+
+        # ── Volume chart — green up days, red down days ──
+        st.subheader("Trading Volume")
         fig_vol = go.Figure()
-        fig_vol.add_trace(go.Bar(
-            x=chart_df[x_col], y=chart_df["volume_24h"],
-            name="Volume (USD)", marker_color="#7c3aed", opacity=0.8,
-        ))
+
+        try:
+            if use_hourly:
+                _cv = chart_df.copy()
+                _cv["_day"] = pd.to_datetime(_cv["datetime"]).dt.date
+                daily_vol = _cv.groupby("_day").agg(
+                    volume=("volume_24h", "sum"),
+                    price_open=("price_usd", "first"),
+                    price_close=("price_usd", "last"),
+                ).reset_index()
+                bar_colors = [
+                    _GREEN if r["price_close"] >= r["price_open"] else _RED
+                    for _, r in daily_vol.iterrows()
+                ]
+                fig_vol.add_trace(go.Bar(x=daily_vol["_day"], y=daily_vol["volume"],
+                                         marker_color=bar_colors, opacity=0.85))
+            else:
+                _cv = chart_df.copy()
+                _cv["price_prev"] = _cv["price_usd"].shift(1)
+                bar_colors = [_BLUE] + [
+                    _GREEN if r["price_usd"] >= r["price_prev"] else _RED
+                    for _, r in _cv.iloc[1:].iterrows()
+                ]
+                fig_vol.add_trace(go.Bar(x=_cv[x_col], y=_cv["volume_24h"],
+                                         marker_color=bar_colors, opacity=0.85))
+        except Exception:
+            fig_vol.add_trace(go.Bar(x=chart_df[x_col], y=chart_df["volume_24h"],
+                                      marker_color=_BLUE, opacity=0.8))
+
         fig_vol.update_layout(
             title="Hourly Trading Volume" if use_hourly else "Daily Trading Volume",
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Volume (USD)",
-            template="plotly_dark", height=220,
+            template=_TMPL, height=240,
             margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
+            showlegend=False,
         )
+        st.caption("🟢 Price up day  🔴 Price down day")
         st.plotly_chart(fig_vol, use_container_width=True)
 
         # ── Trend summary ──
@@ -327,12 +462,12 @@ with tab_overview:
             st.subheader("Trend Overview")
             tc1, tc2, tc3 = st.columns(3)
             tc1.metric("7 Day", f"{current['pct_7d']:+.2f}%",
-                       "↑ Uptrend" if current['pct_7d'] > 0 else "↓ Downtrend")
+                       "▲ Uptrend" if current['pct_7d'] > 0 else "▼ Downtrend")
             tc2.metric("30 Day", f"{current['pct_30d']:+.2f}%",
-                       "↑ Uptrend" if current['pct_30d'] > 0 else "↓ Downtrend")
+                       "▲ Uptrend" if current['pct_30d'] > 0 else "▼ Downtrend")
             if current.get('pct_60d') is not None:
                 tc3.metric("60 Day", f"{current['pct_60d']:+.2f}%",
-                           "↑ Uptrend" if current['pct_60d'] > 0 else "↓ Downtrend")
+                           "▲ Uptrend" if current['pct_60d'] > 0 else "▼ Downtrend")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -400,31 +535,90 @@ with tab_events:
                 use_container_width=True, height=420,
                 column_config={
                     "description": st.column_config.TextColumn("Description", width="large"),
-                    "sentiment_score": st.column_config.NumberColumn("Sentiment Score", format="%.2f"),
+                    "sentiment_score": st.column_config.ProgressColumn(
+                        "Sentiment Score", min_value=-1.0, max_value=1.0, format="%.2f",
+                    ),
+                    "sentiment_label": st.column_config.TextColumn("Sentiment"),
                 },
             )
 
-    # Charts row
+    # ── Charts row ──
     if not events_df.empty:
         st.divider()
-        ca, cb = st.columns(2)
+        st.subheader("Event Activity Analysis")
+
+        # Event velocity
+        try:
+            _ev_dates = pd.to_datetime(events_df["date"], errors="coerce")
+            _today_ts = pd.Timestamp.today()
+            _last30 = (_ev_dates >= _today_ts - timedelta(days=30)).sum()
+            _prior30 = ((_ev_dates >= _today_ts - timedelta(days=60)) &
+                        (_ev_dates < _today_ts - timedelta(days=30))).sum()
+            _last_wk  = _last30 / 4.29
+            _prior_wk = _prior30 / 4.29
+            _vel_chg  = ((_last_wk - _prior_wk) / _prior_wk * 100) if _prior_wk > 0 else 0
+
+            vc1, vc2, vc3 = st.columns(3)
+            vc1.metric("Events (last 30d)", int(_last30))
+            vc2.metric("Events/Week (last 30d)", f"{_last_wk:.1f}")
+            vc3.metric("Velocity vs Prior 30d", f"{_vel_chg:+.1f}%",
+                       "▲ Accelerating" if _vel_chg > 0 else "▼ Decelerating")
+        except Exception:
+            pass
+
+        ca, cb, cc = st.columns([1.5, 1.5, 1])
+
         with ca:
             type_counts = events_df["event_type"].value_counts().reset_index()
             type_counts.columns = ["Event Type", "Count"]
-            fig_pie = px.pie(type_counts, values="Count", names="Event Type",
-                             title="Event Type Distribution", template="plotly_dark", hole=0.3)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            fig_hbar = px.bar(
+                type_counts, y="Event Type", x="Count", orientation="h",
+                title="Events by Type",
+                color="Count", color_continuous_scale=[_YELLOW, _BLUE],
+                template=_TMPL,
+            )
+            fig_hbar.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0),
+                                   showlegend=False, coloraxis_showscale=False)
+            st.plotly_chart(fig_hbar, use_container_width=True)
+
         with cb:
+            try:
+                _ev2 = events_df.copy()
+                _ev2["month"] = _ev2["date"].astype(str).str[:7]
+                monthly = _ev2.groupby("month").size().reset_index(name="Count")
+                dom_type = _ev2.groupby("month")["event_type"].apply(
+                    lambda x: x.mode()[0] if not x.mode().empty else "Other"
+                )
+                type_color_map = {
+                    "Partnership": _BLUE, "Product Launch": _GREEN, "Listing": _RED,
+                    "Funding": _YELLOW, "Milestone": "#7c3aed", "Community": "#06b6d4",
+                }
+                monthly_colors = [type_color_map.get(t, "#9aa0a6") for t in dom_type]
+                fig_monthly = go.Figure(go.Bar(
+                    x=monthly["month"], y=monthly["Count"],
+                    marker_color=monthly_colors,
+                    text=monthly["Count"], textposition="outside",
+                ))
+                fig_monthly.update_layout(
+                    title="Events per Month", template=_TMPL, height=320,
+                    margin=dict(l=0, r=0, t=40, b=0), showlegend=False,
+                )
+                st.plotly_chart(fig_monthly, use_container_width=True)
+            except Exception:
+                st.caption("Monthly frequency chart unavailable.")
+
+        with cc:
             sent_counts = events_df["sentiment_label"].value_counts().reset_index()
             sent_counts.columns = ["Sentiment", "Count"]
-            fig_bar = px.bar(
-                sent_counts, x="Sentiment", y="Count",
-                title="Sentiment Distribution",
+            fig_sent = px.pie(
+                sent_counts, values="Count", names="Sentiment",
+                title="Sentiment Split",
                 color="Sentiment",
-                color_discrete_map={"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"},
-                template="plotly_dark",
+                color_discrete_map={"positive": _GREEN, "negative": _RED, "neutral": _YELLOW},
+                template=_TMPL, hole=0.4,
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            fig_sent.update_layout(height=320, margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_sent, use_container_width=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -438,7 +632,6 @@ with tab_corr:
     elif hourly_df.empty and price_df.empty:
         st.info("Need price data. Click a Refresh button in the sidebar.")
     else:
-        # Choose hourly if available, fall back to daily
         if not hourly_df.empty:
             impact_df = compute_impact_rows_hourly(hourly_df, events_df, price_df)
             available_metrics = HOURLY_METRICS
@@ -452,107 +645,152 @@ with tab_corr:
             date_col = "Date"
             st.caption("Hourly data not loaded — using daily. Click **⏱️ Refresh Hourly Prices** for finer resolution.")
 
+        valid_metrics = [m for m in available_metrics if m in impact_df.columns]
+
         if impact_df.empty:
             st.warning("No events overlap with the price data range. Try refreshing hourly prices.")
         else:
-            # ── Metric filter ──
-            metric = st.radio(
-                "Time window to analyse",
-                [m for m in available_metrics if m in impact_df.columns],
-                horizontal=True,
-            )
+            metric = st.radio("Time window to analyse", valid_metrics, horizontal=True)
 
             st.divider()
 
-            # ── Summary table ──
+            # ── Signal Quality Scorecard ──
+            st.subheader("Signal Quality Scorecard")
+            _score_metric = valid_metrics[0] if valid_metrics else None
+            if _score_metric and not impact_df.empty:
+                _avg_by_type = impact_df.groupby("Event Type")[_score_metric].mean().dropna()
+                _best_type   = _avg_by_type.idxmax() if not _avg_by_type.empty else "N/A"
+                _best_ret    = _avg_by_type.max()    if not _avg_by_type.empty else 0.0
+                _t1d_metric  = next((m for m in valid_metrics if "1d" in m.lower() or "24h" in m.lower()), _score_metric)
+                _t1d_col     = impact_df[_t1d_metric].dropna()
+                _pos_count   = int((_t1d_col > 0).sum())
+                _neg_count   = int((_t1d_col <= 0).sum())
+                _total_cnt   = _pos_count + _neg_count
+                _hit_rate    = (_pos_count / _total_cnt * 100) if _total_cnt > 0 else 0.0
+
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric(f"Best Event Type ({_score_metric})", _best_type, f"{_best_ret:+.2f}%")
+                sc2.metric("Events — Positive T+1d", str(_pos_count))
+                sc3.metric("Events — Negative T+1d", str(_neg_count))
+                sc4.metric("Overall Hit Rate", f"{_hit_rate:.1f}%")
+
+            st.divider()
+
+            # ── Summary table with Signal column ──
             st.subheader("Average Price Change by Event Type")
-            sum_cols = [c for c in available_metrics if c in impact_df.columns] + ["Vol Spike %"]
-            summary = impact_df.groupby("Event Type")[sum_cols].mean().round(2)
-            summary["# Events"] = impact_df.groupby("Event Type").size()
-            # Add event type descriptions as a column
-            summary["What it means"] = summary.index.map(lambda t: EVENT_DESCRIPTIONS.get(t, ""))
+            _sum_cols = valid_metrics + ["Vol Spike %"]
+            _summary  = impact_df.groupby("Event Type")[_sum_cols].mean().round(2)
+            _summary["# Events"]     = impact_df.groupby("Event Type").size()
+            _summary["What it means"] = _summary.index.map(lambda t: EVENT_DESCRIPTIONS.get(t, ""))
+
+            def _signal_label(v):
+                if pd.isna(v):   return "— N/A"
+                if v > 2.0:      return "🟢 Strong"
+                if v >= 0.0:     return "🟡 Weak"
+                return "🔴 Negative"
+
+            _summary["Signal"] = _summary[metric].apply(_signal_label)
             st.dataframe(
-                summary.sort_values(metric, ascending=False),
+                _summary.sort_values(metric, ascending=False),
                 use_container_width=True,
-                column_config={"What it means": st.column_config.TextColumn(width="large")},
+                column_config={
+                    "What it means": st.column_config.TextColumn(width="large"),
+                    "Signal": st.column_config.TextColumn("Signal"),
+                    **{m: st.column_config.NumberColumn(format="%.2f%%") for m in valid_metrics},
+                },
             )
+            st.caption("🟢 Strong: avg > 2% · 🟡 Weak: 0–2% · 🔴 Negative: < 0%")
 
             st.divider()
 
-            # ── Charts ──
-            ca, cb = st.columns(2)
-            with ca:
-                scatter_df = impact_df.dropna(subset=[metric]).copy()
-                scatter_df["Vol Spike %"] = scatter_df["Vol Spike %"].clip(lower=0)
-                # Add type description for hover
-                scatter_df["Type Info"] = scatter_df["Event Type"].map(
-                    lambda t: EVENT_DESCRIPTIONS.get(t, "")
+            # ── Return Heatmap ──
+            _heatmap_df = impact_df.groupby("Event Type")[valid_metrics].mean().round(2)
+            if not _heatmap_df.empty and len(valid_metrics) >= 1:
+                fig_heat = px.imshow(
+                    _heatmap_df,
+                    color_continuous_scale=[_RED, "white", _GREEN],
+                    zmin=-5, zmax=5, text_auto=".2f", aspect="auto",
+                    title="Return Heatmap by Event Type & Time Window",
+                    labels={"color": "Avg Return (%)"},
+                    template=_TMPL,
                 )
-                fig_scatter = px.scatter(
-                    scatter_df,
-                    x="Event Type", y=metric,
-                    color="Sentiment", size="Vol Spike %",
-                    title=f"Price Impact ({metric}) by Event Type",
-                    color_discrete_map={"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"},
-                    template="plotly_dark",
-                    hover_data={
-                        date_col: True,
-                        "Description": True,
-                        "Type Info": True,
-                        "Vol Spike %": True,
-                    },
-                )
-                fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
-                st.plotly_chart(fig_scatter, use_container_width=True)
+                fig_heat.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+                st.plotly_chart(fig_heat, use_container_width=True)
+                st.caption("Each cell = mean price change (%) for that event type and time window. Green = rose, Red = fell.")
+            else:
+                st.info("Not enough data to render heatmap.")
 
-            with cb:
-                avg_by_type = impact_df.groupby("Event Type")[metric].mean().dropna().reset_index()
-                avg_by_type["Type Info"] = avg_by_type["Event Type"].map(
-                    lambda t: EVENT_DESCRIPTIONS.get(t, "")
-                )
-                fig_bar = px.bar(
-                    avg_by_type, x="Event Type", y=metric,
-                    title=f"Average {metric} by Event Type",
-                    color=metric,
-                    color_continuous_scale=["#ff1744", "#f59e0b", "#00c853"],
-                    template="plotly_dark",
-                    hover_data={"Type Info": True},
-                )
-                fig_bar.add_hline(y=0, line_dash="dash", line_color="gray")
-                st.plotly_chart(fig_bar, use_container_width=True)
+            st.divider()
 
-            # ── Early vs late reaction dual bar ──
-            if len(available_metrics) >= 2:
-                m_early = available_metrics[0]   # T+1h or T+1d
-                m_late  = available_metrics[-2]  # T+24h or T+3d
-                both_avail = [c for c in [m_early, m_late] if c in impact_df.columns]
-                if len(both_avail) == 2:
-                    st.subheader(f"Early ({m_early}) vs Late ({m_late}) Reaction per Event")
-                    valid = impact_df.dropna(subset=both_avail)
+            # ── Horizontal average bar chart ──
+            _avg_by_type2 = (
+                impact_df.groupby("Event Type")[metric].mean().dropna()
+                .reset_index().sort_values(metric, ascending=True)
+            )
+            _avg_by_type2["Type Info"] = _avg_by_type2["Event Type"].map(lambda t: EVENT_DESCRIPTIONS.get(t, ""))
+            fig_bar = px.bar(
+                _avg_by_type2, x=metric, y="Event Type", orientation="h",
+                title=f"Average {metric} by Event Type",
+                color=metric, color_continuous_scale=[_RED, "white", _GREEN],
+                text=metric, template=_TMPL,
+                hover_data={"Type Info": True},
+            )
+            fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
+            fig_bar.add_vline(x=0, line_dash="dash", line_color="gray")
+            fig_bar.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            st.divider()
+
+            # ── Top 5 Best / Worst Events ──
+            st.subheader(f"Standout Events — {metric}")
+            _ranked = impact_df.dropna(subset=[metric]).copy()
+            _ranked_show = _ranked[[date_col, "Event Type", "Description", metric]].copy()
+            _ranked_show["Description"] = _ranked_show["Description"].str[:50]
+
+            tb5, tw5 = st.columns(2)
+            with tb5:
+                st.markdown("**Top 5 Best Events**")
+                st.dataframe(_ranked_show.nlargest(5, metric), use_container_width=True,
+                             column_config={metric: st.column_config.NumberColumn(format="%.2f%%")})
+            with tw5:
+                st.markdown("**Top 5 Worst Events**")
+                st.dataframe(_ranked_show.nsmallest(5, metric), use_container_width=True,
+                             column_config={metric: st.column_config.NumberColumn(format="%.2f%%")})
+
+            st.divider()
+
+            # ── Early vs Late reaction dual bar ──
+            if len(valid_metrics) >= 2:
+                _m_early = valid_metrics[0]
+                _m_late  = valid_metrics[-2]
+                _both    = [c for c in [_m_early, _m_late] if c in impact_df.columns]
+                if len(_both) == 2:
+                    st.subheader(f"Early ({_m_early}) vs Late ({_m_late}) Reaction per Event")
+                    _valid = impact_df.dropna(subset=_both)
                     fig_dual = go.Figure()
-                    fig_dual.add_trace(go.Bar(name=m_early, x=valid[date_col], y=valid[m_early],
-                                              marker_color="#7c3aed"))
-                    fig_dual.add_trace(go.Bar(name=m_late,  x=valid[date_col], y=valid[m_late],
-                                              marker_color="#06b6d4"))
+                    fig_dual.add_trace(go.Bar(name=_m_early, x=_valid[date_col], y=_valid[_m_early], marker_color=_BLUE))
+                    fig_dual.add_trace(go.Bar(name=_m_late,  x=_valid[date_col], y=_valid[_m_late],  marker_color=_GREEN))
                     fig_dual.update_layout(
-                        barmode="group", template="plotly_dark",
+                        barmode="group", template=_TMPL,
                         title="Price Change Around Each Event",
                         xaxis_title="Event Datetime" if date_col == "Datetime" else "Event Date",
                         yaxis_title="Price Change (%)", height=320,
+                        margin=dict(l=0, r=0, t=50, b=0),
                     )
                     st.plotly_chart(fig_dual, use_container_width=True)
 
             # ── Full impact table ──
             st.subheader("Full Event Impact Table")
-            show_cols = [date_col, "Event Type", "Description", "Sentiment",
-                         "Price"] + [m for m in available_metrics if m in impact_df.columns] + ["Vol Spike %"]
+            _full_cols = ([date_col, "Event Type", "Description", "Sentiment", "Price"]
+                         + valid_metrics + ["Vol Spike %"])
+            _full_cols = [c for c in _full_cols if c in impact_df.columns]
             st.dataframe(
-                impact_df[show_cols].sort_values(date_col, ascending=False),
+                impact_df[_full_cols].sort_values(date_col, ascending=False),
                 use_container_width=True,
                 column_config={
                     "Description": st.column_config.TextColumn(width="large"),
-                    **{m: st.column_config.NumberColumn(format="%.2f%%")
-                       for m in available_metrics if m in impact_df.columns},
+                    **{m: st.column_config.NumberColumn(format="%.2f%%") for m in valid_metrics},
                 },
             )
 
@@ -566,21 +804,27 @@ with tab_exchanges:
     if exchange_df.empty:
         st.info("No exchange data yet. Click **Refresh Price & Exchange Data** in the sidebar.")
     else:
-        # Ensure geography column
         if "geography" not in exchange_df.columns:
             exchange_df["geography"] = exchange_df.apply(
                 lambda r: fetcher._classify_geo(r["exchange"], r["quote"]), axis=1
             )
 
-        total_vol = exchange_df["volume_usd"].sum()
-        spot_vol = exchange_df[exchange_df["market_type"] == "spot"]["volume_usd"].sum()
-        dex_vol = exchange_df[exchange_df["market_type"] == "dex"]["volume_usd"].sum()
+        _total_vol = exchange_df["volume_usd"].sum()
+        _spot_vol  = exchange_df[exchange_df["market_type"] == "spot"]["volume_usd"].sum()
+        _dex_vol   = exchange_df[exchange_df["market_type"] == "dex"]["volume_usd"].sum()
+        _top3_vol  = exchange_df.groupby("exchange")["volume_usd"].sum().nlargest(3).sum()
+        _conc_pct  = (_top3_vol / _total_vol * 100) if _total_vol > 0 else 0.0
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Volume (all markets)", f"${total_vol/1e6:.1f}M")
-        m2.metric("Spot CEX Volume", f"${spot_vol/1e6:.1f}M", f"{spot_vol/total_vol*100:.0f}%")
-        m3.metric("DEX Volume", f"${dex_vol/1e6:.1f}M", f"{dex_vol/total_vol*100:.0f}%")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Total Volume", f"${_total_vol/1e6:.1f}M")
+        m2.metric("Spot CEX Volume", f"${_spot_vol/1e6:.1f}M",
+                  f"{_spot_vol/_total_vol*100:.0f}%" if _total_vol > 0 else "–")
+        m3.metric("DEX Volume", f"${_dex_vol/1e6:.1f}M",
+                  f"{_dex_vol/_total_vol*100:.0f}%" if _total_vol > 0 else "–")
         m4.metric("# Markets Listed", str(len(exchange_df)))
+        m5.metric("Top 3 Concentration", f"{_conc_pct:.1f}%")
+        if _conc_pct > 80:
+            st.warning(f"Top 3 exchanges control {_conc_pct:.1f}% of volume — high liquidity concentration risk.")
 
         st.divider()
         ca, cb = st.columns(2)
@@ -588,117 +832,371 @@ with tab_exchanges:
         with ca:
             top20 = exchange_df.nlargest(20, "volume_usd")
             fig_ex = px.bar(
-                top20, x="volume_usd", y="exchange",
-                orientation="h",
+                top20, x="volume_usd", y="exchange", orientation="h",
                 color="market_type",
                 title="Top 20 Markets by Volume",
-                color_discrete_map={"spot": "#7c3aed", "dex": "#06b6d4"},
-                template="plotly_dark",
+                color_discrete_map={"spot": _BLUE, "dex": _GREEN},
+                template=_TMPL,
                 labels={"volume_usd": "Volume (USD)", "exchange": ""},
             )
-            fig_ex.update_layout(yaxis={"categoryorder": "total ascending"}, height=500)
+            fig_ex.update_layout(yaxis={"categoryorder": "total ascending"}, height=500,
+                                  margin=dict(l=0, r=0, t=50, b=0))
             st.plotly_chart(fig_ex, use_container_width=True)
+            st.caption("Blue = centralised spot · Green = DEX")
 
         with cb:
-            geo_vol = exchange_df.groupby("geography")["volume_usd"].sum().reset_index()
-            fig_geo = px.pie(
-                geo_vol, values="volume_usd", names="geography",
-                title="Volume by Geography",
-                template="plotly_dark", hole=0.3,
+            fig_tree = px.treemap(
+                exchange_df, path=["geography", "exchange"], values="volume_usd",
+                title="Volume by Geography & Exchange",
+                color="volume_usd", color_continuous_scale=[_BLUE, _GREEN],
+                template=_TMPL,
             )
-            st.plotly_chart(fig_geo, use_container_width=True)
-
-            type_vol = exchange_df.groupby("market_type")["volume_usd"].sum().reset_index()
-            fig_type = px.pie(
-                type_vol, values="volume_usd", names="market_type",
-                title="Spot vs DEX Volume",
-                color="market_type",
-                color_discrete_map={"spot": "#7c3aed", "dex": "#06b6d4"},
-                template="plotly_dark", hole=0.3,
+            fig_tree.update_traces(
+                textinfo="label+percent root",
+                hovertemplate="<b>%{label}</b><br>Volume: $%{value:,.0f}<br>%{percentRoot:.1%} of total<extra></extra>",
             )
-            st.plotly_chart(fig_type, use_container_width=True)
+            fig_tree.update_layout(margin=dict(l=0, r=0, t=50, b=0), coloraxis_showscale=False)
+            st.plotly_chart(fig_tree, use_container_width=True)
+            st.caption("Outer = geography region · Inner = exchange · Size = USD volume")
 
-        # Quote currency breakdown
+        _type_vol = exchange_df.groupby("market_type")["volume_usd"].sum().reset_index()
+        fig_type = px.pie(_type_vol, values="volume_usd", names="market_type",
+                          title="Spot vs DEX Volume Split",
+                          color="market_type",
+                          color_discrete_map={"spot": _BLUE, "dex": _GREEN},
+                          template=_TMPL, hole=0.4)
+        fig_type.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+        st.plotly_chart(fig_type, use_container_width=True)
+
+        st.divider()
+
+        # Price consistency / arbitrage
+        st.subheader("Price Consistency")
+        if "price_usd" in exchange_df.columns:
+            _prices = exchange_df["price_usd"].dropna()
+            if not _prices.empty:
+                _med = _prices.median()
+                _arb_mask = ((exchange_df["price_usd"] - _med).abs() / _med) > 0.005
+                _arb_rows = exchange_df[_arb_mask].copy()
+                if not _arb_rows.empty:
+                    _arb_rows["Deviation %"] = ((_arb_rows["price_usd"] - _med) / _med * 100).round(3)
+                    _arb_rows["Note"] = "Arbitrage opportunity"
+                    st.warning(f"{len(_arb_rows)} exchange(s) deviate >0.5% from median price (${_med:.5f}).")
+                    st.dataframe(
+                        _arb_rows[["exchange", "base", "quote", "price_usd", "Deviation %", "Note"]]
+                        .sort_values("Deviation %", key=abs, ascending=False),
+                        use_container_width=True,
+                        column_config={
+                            "price_usd": st.column_config.NumberColumn("Price (USD)", format="$%.5f"),
+                            "Deviation %": st.column_config.NumberColumn("Deviation %", format="%.3f%%"),
+                        },
+                    )
+                else:
+                    st.success(f"All exchanges within 0.5% of median price (${_med:.5f}). No significant arbitrage detected.")
+
+        st.divider()
         st.subheader("Volume by Quote Currency (top 10)")
-        quote_vol = (
-            exchange_df.groupby("quote")["volume_usd"]
-            .sum().sort_values(ascending=False).head(10).reset_index()
-        )
-        fig_quote = px.bar(
-            quote_vol, x="quote", y="volume_usd",
-            title="Volume by Quote Currency",
-            color_discrete_sequence=["#7c3aed"],
-            template="plotly_dark",
-            labels={"volume_usd": "Volume (USD)", "quote": "Quote Currency"},
-        )
+        _quote_vol = (exchange_df.groupby("quote")["volume_usd"].sum()
+                      .sort_values(ascending=False).head(10).reset_index())
+        fig_quote = px.bar(_quote_vol, x="quote", y="volume_usd",
+                           title="Volume by Quote Currency",
+                           color_discrete_sequence=[_BLUE], template=_TMPL,
+                           text="volume_usd",
+                           labels={"volume_usd": "Volume (USD)", "quote": "Quote Currency"})
+        fig_quote.update_traces(texttemplate="$%{text:,.0f}", textposition="outside")
+        fig_quote.update_layout(margin=dict(l=0, r=0, t=50, b=30))
         st.plotly_chart(fig_quote, use_container_width=True)
+        st.caption("USDT dominance = institutional depth · KRW/TRY spikes = retail momentum (Korea/Turkey)")
 
         st.subheader("All Exchange Data")
         st.dataframe(
             exchange_df[["exchange", "base", "quote", "volume_usd", "price_usd",
-                          "market_type", "geography"]]
-            .sort_values("volume_usd", ascending=False),
+                          "market_type", "geography"]].sort_values("volume_usd", ascending=False),
             use_container_width=True,
             column_config={
                 "volume_usd": st.column_config.NumberColumn("Volume (USD)", format="$%.0f"),
-                "price_usd": st.column_config.NumberColumn("Price (USD)", format="$%.4f"),
+                "price_usd":  st.column_config.NumberColumn("Price (USD)",  format="$%.4f"),
             },
         )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — RISK & SIGNALS
+# TAB 5 — ANALYTICS (new)
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_analytics:
+    st.header("Analytics")
+
+    _has_price = not price_df.empty and len(price_df) >= 2
+    if _has_price:
+        _price_sorted = price_df.sort_values("date").copy()
+        daily_returns = _price_sorted["price_usd"].pct_change() * 100
+    else:
+        daily_returns = pd.Series(dtype=float)
+        _price_sorted = pd.DataFrame()
+
+    try:
+        if not hourly_df.empty and not events_df.empty:
+            _tab_impact = compute_impact_rows_hourly(hourly_df, events_df, price_df)
+            _t1_col = "T+24h %"
+        elif not price_df.empty and not events_df.empty:
+            _tab_impact = compute_impact_rows(price_df, events_df)
+            _t1_col = "T+1d %"
+        else:
+            _tab_impact = pd.DataFrame()
+            _t1_col = None
+    except Exception:
+        _tab_impact = pd.DataFrame()
+        _t1_col = None
+
+    # ── Section 1: Price Trend Analysis ──
+    st.subheader("Price Trend Analysis")
+    if not _has_price:
+        st.info("No price data available. Click a Refresh button in the sidebar.")
+    else:
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            roll30 = _price_sorted["price_usd"].pct_change(30) * 100
+            roll30_df = pd.DataFrame({"date": _price_sorted["date"].values,
+                                      "return_30d": roll30.values}).dropna()
+            fig_r30 = go.Figure()
+            fig_r30.add_trace(go.Scatter(
+                x=roll30_df["date"], y=roll30_df["return_30d"],
+                mode="lines", name="30d Rolling Return",
+                line=dict(color=_BLUE, width=2),
+                fill="tozeroy", fillcolor="rgba(26,115,232,0.12)",
+            ))
+            fig_r30.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+            fig_r30.update_layout(title="Rolling 30-Day Return (%)", xaxis_title="Date",
+                                   yaxis_title="Return (%)", template=_TMPL, height=300,
+                                   margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_r30, use_container_width=True)
+
+        with col_b:
+            vol7 = daily_returns.rolling(7).std()
+            vol7_df = pd.DataFrame({"date": _price_sorted["date"].values,
+                                    "volatility_7d": vol7.values}).dropna()
+            fig_v7 = go.Figure()
+            fig_v7.add_trace(go.Scatter(
+                x=vol7_df["date"], y=vol7_df["volatility_7d"],
+                mode="lines", name="7d Volatility",
+                line=dict(color=_RED, width=2),
+            ))
+            fig_v7.update_layout(title="7-Day Rolling Volatility", xaxis_title="Date",
+                                  yaxis_title="Std Dev of Daily Return (%)", template=_TMPL,
+                                  height=300, margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_v7, use_container_width=True)
+            st.caption("Higher volatility = larger price swings expected")
+
+    st.divider()
+
+    # ── Section 2: Event Signal Intelligence ──
+    st.subheader("Event Signal Intelligence")
+    col_c, col_d = st.columns(2)
+
+    with col_c:
+        if _tab_impact.empty or _t1_col is None or _t1_col not in _tab_impact.columns:
+            st.info("No event impact data. Refresh price data and ensure events exist.")
+        elif daily_returns.empty:
+            st.info("Need daily price data to compute baseline-adjusted returns.")
+        else:
+            mean_daily_return = round(float(daily_returns.dropna().mean()), 4)
+            _excess_df = _tab_impact.dropna(subset=[_t1_col]).copy()
+            _excess_df["Excess Return"] = _excess_df[_t1_col] - mean_daily_return
+            _excess_by_type = (_excess_df.groupby("Event Type")["Excess Return"]
+                               .mean().reset_index().sort_values("Excess Return", ascending=False))
+            _bar_clrs = [_GREEN if v >= 0 else _RED for v in _excess_by_type["Excess Return"]]
+            fig_exc = go.Figure(go.Bar(
+                x=_excess_by_type["Event Type"], y=_excess_by_type["Excess Return"],
+                marker_color=_bar_clrs,
+                text=_excess_by_type["Excess Return"].round(2).astype(str) + "%",
+                textposition="outside",
+            ))
+            fig_exc.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+            fig_exc.update_layout(
+                title=f"Baseline-Adjusted {_t1_col} Return by Event Type",
+                xaxis_title="Event Type", yaxis_title="Excess Return (%)",
+                template=_TMPL, height=340, margin=dict(l=0, r=0, t=40, b=0),
+            )
+            st.plotly_chart(fig_exc, use_container_width=True)
+            st.caption(f"Returns adjusted for daily market drift of {mean_daily_return:+.2f}%. "
+                       "Positive = event outperformed baseline.")
+
+    with col_d:
+        if events_df.empty:
+            st.info("No events to cluster.")
+        elif not _has_price:
+            st.info("Need price data for weekly overlay.")
+        else:
+            try:
+                _ev_c = events_df.copy()
+                _ev_c["date"] = pd.to_datetime(_ev_c["date"], errors="coerce")
+                _ev_c = _ev_c.dropna(subset=["date"])
+                _ev_weekly = _ev_c.set_index("date").resample("W").size().reset_index()
+                _ev_weekly.columns = ["week", "event_count"]
+
+                _pr_w = _price_sorted.copy()
+                _pr_w["date"] = pd.to_datetime(_pr_w["date"], errors="coerce")
+                _pr_w = _pr_w.dropna(subset=["date"]).set_index("date")
+                _pr_w_ret = (_pr_w["price_usd"].resample("W").last().pct_change() * 100).reset_index()
+                _pr_w_ret.columns = ["week", "weekly_return"]
+                _merged_w = pd.merge(_ev_weekly, _pr_w_ret, on="week", how="outer").sort_values("week")
+
+                fig_cl = go.Figure()
+                fig_cl.add_trace(go.Bar(x=_merged_w["week"], y=_merged_w["event_count"],
+                                         name="Events/Week", marker_color=_BLUE, opacity=0.7, yaxis="y1"))
+                fig_cl.add_trace(go.Scatter(x=_merged_w["week"], y=_merged_w["weekly_return"],
+                                             name="Weekly Return %", line=dict(color=_RED, width=2),
+                                             mode="lines+markers", yaxis="y2"))
+                fig_cl.update_layout(
+                    title="Event Frequency vs Weekly Price Return",
+                    xaxis_title="Week",
+                    yaxis=dict(title="Events per Week", side="left"),
+                    yaxis2=dict(title="Weekly Return (%)", overlaying="y", side="right",
+                                showgrid=False, zeroline=False),
+                    legend=dict(orientation="h", y=-0.2),
+                    template=_TMPL, height=340, margin=dict(l=0, r=0, t=40, b=40),
+                )
+                st.plotly_chart(fig_cl, use_container_width=True)
+            except Exception as _e:
+                st.info(f"Could not render event clustering chart: {_e}")
+
+    st.divider()
+
+    # ── Section 3: Volume Intelligence ──
+    st.subheader("Volume Intelligence")
+    if not _has_price or "volume_24h" not in _price_sorted.columns:
+        st.info("No volume data available. Refresh price data.")
+    else:
+        try:
+            _vd = _price_sorted[["date", "volume_24h"]].copy().dropna(subset=["volume_24h"])
+            _vd["vol_30d_avg"] = _vd["volume_24h"].rolling(30, min_periods=1).mean()
+            _vd["is_anomaly"]  = _vd["volume_24h"] > (1.8 * _vd["vol_30d_avg"])
+            _anom_count = int(_vd["is_anomaly"].sum())
+            _normal = _vd[~_vd["is_anomaly"]]
+            _anomaly = _vd[_vd["is_anomaly"]]
+
+            fig_va = go.Figure()
+            fig_va.add_trace(go.Bar(x=_normal["date"],  y=_normal["volume_24h"],
+                                    name="Normal Volume", marker_color=_BLUE, opacity=0.75))
+            fig_va.add_trace(go.Bar(x=_anomaly["date"], y=_anomaly["volume_24h"],
+                                    name="Volume Anomaly (>1.8× 30d avg)",
+                                    marker_color=_RED, opacity=0.9))
+            fig_va.update_layout(title="Daily Volume with Anomaly Detection",
+                                  barmode="overlay", template=_TMPL, height=300,
+                                  margin=dict(l=0, r=0, t=40, b=0))
+
+            vc, vm = st.columns([4, 1])
+            with vc:
+                st.plotly_chart(fig_va, use_container_width=True)
+            with vm:
+                st.metric("Anomaly Days", _anom_count,
+                          help="Days where volume exceeded 1.8× the 30-day rolling average")
+        except Exception as _e:
+            st.info(f"Volume anomaly chart unavailable: {_e}")
+
+    st.divider()
+
+    # ── Section 4: Data Quality Dashboard ──
+    st.subheader("Data Quality Dashboard")
+    _total_ev = len(events_df)
+    _valid_dt = int(events_df["datetime_str"].notna().sum()) if not events_df.empty and "datetime_str" in events_df.columns else 0
+    _price_days  = len(price_df)
+    _hourly_rows = len(hourly_df)
+
+    dq1, dq2, dq3, dq4 = st.columns(4)
+    dq1.metric("Total Events", _total_ev)
+    dq2.metric("Events with Valid Datetime", _valid_dt,
+               delta=f"{_valid_dt - (_total_ev - _valid_dt)} vs missing")
+    dq3.metric("Daily Price Rows", _price_days)
+    dq4.metric("Hourly Price Rows", _hourly_rows)
+
+    def _freshness_status(ts_str):
+        if ts_str == "Never": return "Never refreshed"
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None: ts = ts.replace(tzinfo=timezone.utc)
+            age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+            if age_h < 2:   return "✅ Fresh (< 2h)"
+            if age_h < 24:  return f"🟡 OK ({age_h:.0f}h ago)"
+            if age_h < 72:  return f"🟠 Stale ({age_h/24:.0f}d ago)"
+            return f"🔴 Old ({age_h/24:.0f}d ago)"
+        except Exception:
+            return "Unknown"
+
+    st.dataframe(pd.DataFrame([
+        {"Source": "Daily Price History", "Last Refresh": db.get_last_refresh("price_history"),
+         "Status": _freshness_status(db.get_last_refresh("price_history"))},
+        {"Source": "Hourly Prices",       "Last Refresh": db.get_last_refresh("price_hourly"),
+         "Status": _freshness_status(db.get_last_refresh("price_hourly"))},
+        {"Source": "Twitter / Posts",     "Last Refresh": db.get_last_refresh("tweets"),
+         "Status": _freshness_status(db.get_last_refresh("tweets"))},
+    ]), use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — RISK & SIGNALS
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_risk:
     st.header("Risk Signals & Predictive Insights")
+
+    try:
+        if not hourly_df.empty and not events_df.empty:
+            _risk_impact = compute_impact_rows_hourly(hourly_df, events_df, price_df)
+            _risk_t1_col = "T+24h %"
+        elif not price_df.empty and not events_df.empty:
+            _risk_impact = compute_impact_rows(price_df, events_df)
+            _risk_t1_col = "T+1d %"
+        else:
+            _risk_impact = pd.DataFrame()
+            _risk_t1_col = None
+    except Exception:
+        _risk_impact = pd.DataFrame()
+        _risk_t1_col = None
 
     cl, cr = st.columns(2)
 
     with cl:
         st.subheader("⚠️ Active Risk Signals")
-
         signals = []
         if current:
-            # Significant move with no recent events
             recent_events_2d = events_df[
                 events_df["date"] >= (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
             ] if not events_df.empty else pd.DataFrame()
-
             if abs(current["pct_24h"]) > 5 and recent_events_2d.empty:
-                signals.append(("🔴 High", f"Price moved {current['pct_24h']:+.1f}% in 24h with no logged events — possible untracked news or speculation"))
-
+                signals.append(("High", f"Price moved {current['pct_24h']:+.1f}% in 24h with no logged events — possible untracked news"))
             if current["cex_volume_24h"] > 0:
                 dex_ratio = current["dex_volume_24h"] / current["cex_volume_24h"]
                 if dex_ratio > 0.2:
-                    signals.append(("🟡 Medium", f"DEX is {dex_ratio*100:.0f}% of CEX volume — elevated on-chain trading activity"))
-
+                    signals.append(("Medium", f"DEX is {dex_ratio*100:.0f}% of CEX volume — elevated on-chain activity"))
             if current["pct_7d"] < -10:
-                signals.append(("🔴 High", f"7d price down {current['pct_7d']:.1f}% — sustained downtrend"))
-
+                signals.append(("High", f"7d price down {current['pct_7d']:.1f}% — sustained downtrend"))
             if current["pct_24h"] > 15:
-                signals.append(("🟡 Medium", f"Price up {current['pct_24h']:+.1f}% in 24h — watch for reversal"))
-
+                signals.append(("Medium", f"Price up {current['pct_24h']:+.1f}% in 24h — watch for reversal"))
         if not signals:
-            signals.append(("🟢 Low", "No major risk signals detected currently"))
-
+            signals.append(("Low", "No major risk signals detected currently"))
         for severity, msg in signals:
-            level = severity.split()[0]
-            if "🔴" in level:
-                st.error(f"**{severity}**: {msg}")
-            elif "🟡" in level:
-                st.warning(f"**{severity}**: {msg}")
-            else:
-                st.success(f"**{severity}**: {msg}")
+            if severity == "High":     st.error(f"**High**: {msg}")
+            elif severity == "Medium": st.warning(f"**Medium**: {msg}")
+            else:                      st.success(f"**Low**: {msg}")
 
-        # Repeated negative patterns
-        if not events_df.empty:
+        # Sentiment heatmap
+        if not events_df.empty and "event_type" in events_df.columns and "sentiment_label" in events_df.columns:
             st.divider()
-            st.subheader("📊 Sentiment by Event Type")
-            sent_matrix = (
-                events_df.groupby(["event_type", "sentiment_label"])
-                .size().unstack(fill_value=0).reset_index()
-            )
-            st.dataframe(sent_matrix, use_container_width=True)
+            st.subheader("📊 Sentiment Heatmap by Event Type")
+            try:
+                _hm = events_df.groupby(["event_type", "sentiment_label"]).size().unstack(fill_value=0)
+                for _sc in ["positive", "neutral", "negative"]:
+                    if _sc not in _hm.columns: _hm[_sc] = 0
+                _hm = _hm[["positive", "neutral", "negative"]]
+                fig_hm = px.imshow(_hm, color_continuous_scale="RdYlGn",
+                                   labels=dict(x="Sentiment", y="Event Type", color="Count"),
+                                   title="Event Type × Sentiment Count",
+                                   template=_TMPL, aspect="auto")
+                fig_hm.update_layout(height=360, margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_hm, use_container_width=True)
+            except Exception as _e:
+                st.info(f"Could not render heatmap: {_e}")
 
     with cr:
         st.subheader("🔮 Predictive Signals")
@@ -706,18 +1204,12 @@ with tab_risk:
         if current:
             momentum = "bullish" if current["pct_1h"] > 0 and current["pct_24h"] > 0 else \
                        "bearish" if current["pct_1h"] < 0 and current["pct_24h"] < 0 else "mixed"
-            momentum_icon = "🟢" if momentum == "bullish" else ("🔴" if momentum == "bearish" else "🟡")
-
-            st.markdown(f"""
-**Current Market State:**
-| Metric | Value |
-|--------|-------|
-| Price | ${current['price']:.4f} |
-| 1h Momentum | {current['pct_1h']:+.2f}% |
-| 24h Trend | {current['pct_24h']:+.2f}% |
-| Short Momentum | {momentum_icon} {momentum.title()} |
-| CMC Rank | #{current['cmc_rank']} |
-""")
+            ms1, ms2 = st.columns(2)
+            ms1.metric("Price (USD)", f"${current['price']:.4f}", f"{current['pct_24h']:+.2f}% 24h")
+            ms2.metric("1h Momentum", f"{current['pct_1h']:+.2f}%", momentum.title())
+            ms3, ms4 = st.columns(2)
+            ms3.metric("24h Trend", f"{current['pct_24h']:+.2f}%", "Up" if current["pct_24h"] > 0 else "Down")
+            ms4.metric("CMC Rank", f"#{current['cmc_rank']}")
 
         st.divider()
         st.markdown("""
@@ -728,34 +1220,98 @@ with tab_risk:
 - 📉 DEX volume surge → on-chain activity, possible whale movement
 """)
 
-        # Computed pattern library from actual event/price data
-        st.subheader("📊 Observed Pattern Library (computed from your data)")
+        st.divider()
+
+        # Rolling signal quality
+        st.subheader("📊 Rolling Signal Quality (last 30 days)")
+        _sq_rendered = False
+        if (not _risk_impact.empty and _risk_t1_col is not None
+                and _risk_t1_col in _risk_impact.columns and not events_df.empty):
+            try:
+                _sq = _risk_impact.dropna(subset=[_risk_t1_col]).copy()
+                _sq_dcol = "Datetime" if "Datetime" in _sq.columns else "Date"
+                _sq["_sq_date"] = pd.to_datetime(_sq[_sq_dcol], errors="coerce").dt.normalize()
+                _sq = _sq.dropna(subset=["_sq_date"])
+                if not _sq.empty:
+                    _today_sq = pd.Timestamp.utcnow().normalize()
+                    _sq_rows = []
+                    for _off in range(29, -1, -1):
+                        _day = _today_sq - pd.Timedelta(days=_off)
+                        _win = _sq[(_sq["_sq_date"] >= _day - pd.Timedelta(days=7)) &
+                                   (_sq["_sq_date"] < _day)]
+                        if len(_win) >= 1:
+                            _sq_rows.append({"day": _day,
+                                             "signal_quality_pct": round((_win[_risk_t1_col] > 0).mean() * 100, 1),
+                                             "n_events": len(_win)})
+                    if _sq_rows:
+                        _sq_df = pd.DataFrame(_sq_rows)
+                        fig_sq = go.Figure()
+                        fig_sq.add_trace(go.Scatter(
+                            x=_sq_df["day"], y=_sq_df["signal_quality_pct"],
+                            mode="lines+markers", line=dict(color=_BLUE, width=2),
+                            fill="tozeroy", fillcolor="rgba(26,115,232,0.10)",
+                            customdata=_sq_df["n_events"],
+                            hovertemplate="%{x|%Y-%m-%d}<br>Signal Quality: %{y:.1f}%<br>Events: %{customdata}<extra></extra>",
+                        ))
+                        fig_sq.add_hline(y=50, line_dash="dash", line_color="gray", opacity=0.5,
+                                         annotation_text="50% baseline")
+                        fig_sq.update_layout(
+                            title="% of Prior-7-Day Events with Positive Next-Day Return",
+                            yaxis=dict(range=[0, 105]), template=_TMPL, height=260,
+                            margin=dict(l=0, r=0, t=40, b=0),
+                        )
+                        st.plotly_chart(fig_sq, use_container_width=True)
+                        _sq_rendered = True
+            except Exception:
+                pass
+        if not _sq_rendered:
+            st.info("Not enough event impact data to compute rolling signal quality.")
+
+        st.divider()
+
+        # Pattern Library
+        st.subheader("📊 Pattern Library (computed from your data)")
         try:
-            _impact = compute_impact_rows(price_df, events_df) if not (price_df.empty or events_df.empty) else pd.DataFrame()
-            if not _impact.empty and "T+1d %" in _impact.columns:
-                _metric_col = "T+1d %"
-                _pat = _impact.groupby("Event Type").agg(
+            _pat_i = compute_impact_rows(price_df, events_df) if not (price_df.empty or events_df.empty) else pd.DataFrame()
+            if not _pat_i.empty and "T+1d %" in _pat_i.columns:
+                _pat = _pat_i.groupby("Event Type").agg(
                     Count=("ID", "count"),
-                    Avg_T1d=(  _metric_col, "mean"),
-                    Med_T1d=(  _metric_col, "median"),
-                    Hit_Rate=( _metric_col, lambda x: round((x > 0).mean() * 100, 0)),
-                ).round(2).sort_values("Avg_T1d", ascending=False).reset_index()
+                    Avg_T1d=("T+1d %", "mean"),
+                    Med_T1d=("T+1d %", "median"),
+                    Hit_Rate=("T+1d %", lambda x: round((x > 0).mean() * 100, 1)),
+                ).round(2).sort_values("Hit_Rate", ascending=True).reset_index()
                 _pat.columns = ["Event Type", "# Events", "Avg T+1d %", "Median T+1d %", "% Days Price Rose"]
-                _pat["% Days Price Rose"] = _pat["% Days Price Rose"].astype(str) + "%"
-                st.dataframe(_pat, use_container_width=True,
-                             column_config={"Event Type": st.column_config.TextColumn(width="medium")})
-                st.caption("⚠️ T+1d returns include overall market trend. A positive number does not mean the event caused the rise.")
+                _pcols = [_GREEN if v >= 50 else _RED for v in _pat["% Days Price Rose"]]
+                fig_pat = go.Figure(go.Bar(
+                    x=_pat["% Days Price Rose"], y=_pat["Event Type"], orientation="h",
+                    marker_color=_pcols,
+                    text=_pat["% Days Price Rose"].astype(str) + "%", textposition="outside",
+                    customdata=_pat["# Events"],
+                    hovertemplate="<b>%{y}</b><br>% Days Price Rose: %{x}%<br># Events: %{customdata}<extra></extra>",
+                ))
+                fig_pat.add_vline(x=50, line_dash="dash", line_color="gray", opacity=0.5,
+                                   annotation_text="50% baseline")
+                fig_pat.update_layout(
+                    title="% of Events Where Price Rose the Next Day",
+                    xaxis=dict(range=[0, 115]), template=_TMPL,
+                    height=max(260, 40 * len(_pat) + 80),
+                    margin=dict(l=0, r=60, t=40, b=0),
+                )
+                st.plotly_chart(fig_pat, use_container_width=True)
+                st.dataframe(_pat.sort_values("Avg T+1d %", ascending=False),
+                             use_container_width=True, hide_index=True)
+                st.caption("⚠️ T+1d returns include overall market trend — does not prove causation.")
             else:
                 st.info("Refresh Price & Exchange Data to populate this table.")
         except Exception:
             st.info("Refresh price data to see computed patterns.")
 
-        # Recent events summary
         if not events_df.empty:
             st.divider()
             st.subheader("📅 Latest 7 Events")
-            recent = events_df.head(7)[["date", "event_type", "description", "sentiment_label", "source"]]
-            st.dataframe(recent, use_container_width=True)
+            _rc = [c for c in ["date", "event_type", "description", "sentiment_label", "source"] if c in events_df.columns]
+            st.dataframe(events_df.head(7)[_rc], use_container_width=True, hide_index=True)
+
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.divider()

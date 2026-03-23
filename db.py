@@ -12,6 +12,7 @@ class Database:
 
     def _init_tables(self):
         self.conn.executescript("""
+            PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS price_history (
                 date TEXT PRIMARY KEY,
                 price_usd REAL,
@@ -41,7 +42,8 @@ class Database:
                 quote TEXT,
                 volume_usd REAL,
                 price_usd REAL,
-                market_type TEXT DEFAULT 'spot'
+                market_type TEXT DEFAULT 'spot',
+                geography TEXT
             );
             CREATE TABLE IF NOT EXISTS price_hourly (
                 datetime TEXT PRIMARY KEY,
@@ -52,8 +54,16 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT DEFAULT (datetime('now')),
                 data_type TEXT,
-                records_updated INTEGER DEFAULT 0
+                records_updated INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'success',
+                error_message TEXT,
+                duration_ms INTEGER
             );
+            CREATE INDEX IF NOT EXISTS idx_events_date        ON events(date);
+            CREATE INDEX IF NOT EXISTS idx_events_type        ON events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_events_source      ON events(source);
+            CREATE INDEX IF NOT EXISTS idx_exchange_fetched   ON exchange_snapshots(fetched_date);
+            CREATE INDEX IF NOT EXISTS idx_refresh_log_type   ON refresh_log(data_type, timestamp);
         """)
         self.conn.commit()
 
@@ -141,10 +151,11 @@ class Database:
         for row in rows:
             cur.execute(
                 """INSERT INTO exchange_snapshots
-                   (fetched_date, exchange, base, quote, volume_usd, price_usd, market_type)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   (fetched_date, exchange, base, quote, volume_usd, price_usd, market_type, geography)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (fetched_date, row["exchange"], row["base"], row["quote"],
-                 row["volume_usd"], row["price_usd"], row["market_type"]),
+                 row["volume_usd"], row["price_usd"], row["market_type"],
+                 row.get("geography", "Global")),
             )
         self.conn.commit()
         return len(rows)
@@ -159,9 +170,11 @@ class Database:
 
     # ---- Refresh Log ----
 
-    def log_refresh(self, data_type: str, records: int):
+    def log_refresh(self, data_type: str, records: int, status: str = "success",
+                    error_message: str = None, duration_ms: int = None):
         self.conn.execute(
-            "INSERT INTO refresh_log (data_type, records_updated) VALUES (?,?)", (data_type, records)
+            "INSERT INTO refresh_log (data_type, records_updated, status, error_message, duration_ms) VALUES (?,?,?,?,?)",
+            (data_type, records, status, error_message, duration_ms),
         )
         self.conn.commit()
 

@@ -143,15 +143,21 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
 
         if ev_hour:
             # ── Hourly path ──
-            ev_pos   = hours_sorted.index(ev_hour)
-            ev_price = price_idx.loc[ev_hour, "price_usd"]
+            # Use the price 1 hour BEFORE the event as T+0 anchor to avoid
+            # same-hour contamination (event-day price already embeds intraday move)
+            anchor_hour = price_at_hour(ev_hour, -1) or ev_hour
+            ev_price = price_idx.loc[anchor_hour, "price_usd"]
             ev_vol   = price_idx.loc[ev_hour, "volume_24h"]
 
-            pre_vols = [
-                price_idx.loc[price_at_hour(ev_hour, -i), "volume_24h"]
+            # Precompute prev-hour keys once to avoid redundant string ops
+            prev_hour_keys = [
+                (datetime.strptime(ev_hour, "%Y-%m-%d %H:00") - timedelta(hours=i)).strftime("%Y-%m-%d %H:00")
                 for i in range(1, 25)
-                if price_at_hour(ev_hour, -i) in price_idx.index
-                and pd.notna(price_idx.loc[price_at_hour(ev_hour, -i), "volume_24h"])
+            ]
+            pre_vols = [
+                price_idx.loc[h, "volume_24h"]
+                for h in prev_hour_keys
+                if h in price_idx.index and pd.notna(price_idx.loc[h, "volume_24h"])
             ]
             avg_vol = sum(pre_vols) / len(pre_vols) if pre_vols else ev_vol
             vol_spike_pct = ((ev_vol / avg_vol) - 1) * 100 if avg_vol and avg_vol > 0 else 0

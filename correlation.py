@@ -145,7 +145,8 @@ def compute_impact_rows_hourly(price_hourly_df: pd.DataFrame, events_df: pd.Data
             # ── Hourly path ──
             # Use the price 1 hour BEFORE the event as T+0 anchor to avoid
             # same-hour contamination (event-day price already embeds intraday move)
-            anchor_hour = price_at_hour(ev_hour, -1) or ev_hour
+            _anchor_key = (datetime.strptime(ev_hour, "%Y-%m-%d %H:00") - timedelta(hours=1)).strftime("%Y-%m-%d %H:00")
+            anchor_hour = _anchor_key if _anchor_key in price_idx.index else ev_hour
             ev_price = price_idx.loc[anchor_hour, "price_usd"]
             ev_vol   = price_idx.loc[ev_hour, "volume_24h"]
 

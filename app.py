@@ -20,31 +20,86 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* Google Analytics-style clean light theme */
-.main { background-color: #f8f9fa; }
-[data-testid="metric-container"] {
-    background: #ffffff;
-    border: 1px solid #e8eaed;
-    border-radius: 8px;
-    padding: 14px 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── KITE Cyber Dark Theme ─────────────────────────────────────────────────── */
+html, body, .stApp { background-color: #07071A !important; }
+.main .block-container { background-color: #07071A; padding-top: 1.5rem; }
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0A0A20 0%, #07071A 100%) !important;
+    border-right: 1px solid #1C1C42 !important;
 }
+
+/* Metric cards — glassy dark panels with cyan glow border */
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #0D0D28 0%, #111135 100%);
+    border: 1px solid rgba(0, 229, 255, 0.18);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.06), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+[data-testid="metric-container"] label { color: #6B82C0 !important; font-size: 0.77rem !important; letter-spacing: 0.04em; text-transform: uppercase; }
+[data-testid="metric-container"] [data-testid="metric-value"] { color: #E0EAFF !important; font-family: 'JetBrains Mono', monospace !important; }
 [data-testid="metric-container"] [data-testid="metric-delta"] { font-size: 0.8rem; }
-.stTabs [data-baseweb="tab-list"] { gap: 8px; background: #f8f9fa; }
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] { gap: 6px; background: transparent; border-bottom: 1px solid #1C1C42; }
 .stTabs [data-baseweb="tab"] {
-    background: #ffffff;
-    border: 1px solid #e8eaed;
-    border-radius: 6px 6px 0 0;
-    color: #5f6368;
+    background: #0D0D28;
+    border: 1px solid #1C1C42;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    color: #5B6FA8;
     font-weight: 500;
+    font-family: 'Syne', sans-serif;
+    transition: color 0.2s;
 }
 .stTabs [aria-selected="true"] {
-    background: #ffffff;
-    border-bottom: 2px solid #F5A623;
-    color: #F5A623;
+    background: #111135;
+    border-color: #2A2A5A;
+    border-bottom: 2px solid #00E5FF;
+    color: #00E5FF !important;
 }
-h1, h2, h3 { color: #202124; }
-.stDataFrame { border: 1px solid #e8eaed; border-radius: 8px; }
+.stTabs [data-baseweb="tab"]:hover { color: #9BE8FF; }
+
+/* Typography */
+h1, h2 { color: #E0EAFF !important; font-family: 'Syne', sans-serif !important; letter-spacing: -0.01em; }
+h3 { color: #8AA8FF !important; font-family: 'Syne', sans-serif !important; }
+p, .stMarkdown, .stCaption { color: #7A8FBF !important; }
+label, .stRadio label, .stSelectbox label { color: #7A8FBF !important; }
+
+/* Dividers & DataFrames */
+hr { border-color: #1C1C42 !important; }
+.stDataFrame { border: 1px solid #1C1C42 !important; border-radius: 8px; background: #0D0D28; }
+
+/* Buttons */
+.stButton button {
+    background: linear-gradient(135deg, #0D0D28, #161648) !important;
+    border: 1px solid rgba(0,229,255,0.3) !important;
+    color: #00E5FF !important;
+    border-radius: 8px !important;
+    font-family: 'Syne', sans-serif !important;
+    letter-spacing: 0.03em;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+.stButton button:hover {
+    border-color: #00E5FF !important;
+    box-shadow: 0 0 14px rgba(0,229,255,0.28) !important;
+}
+button[kind="primary"] {
+    background: linear-gradient(135deg, #00B4CC, #0070AA) !important;
+    border: none !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 18px rgba(0,229,255,0.22) !important;
+}
+
+/* Sidebar text */
+section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] p { color: #8899CC !important; }
+section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2 { color: #00E5FF !important; }
+section[data-testid="stSidebar"] label { color: #7A8FBF !important; }
+
+/* Info/warning/success boxes */
+.stAlert { border-radius: 8px !important; border-left-width: 3px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -207,37 +262,42 @@ def get_current_snapshot_cached():
 
 current = get_current_snapshot_cached()
 
-# ── KITE brand colour palette ─────────────────────────────────────────────────
-_ORANGE  = "#F5A623"   # KITE primary orange
-_BLUE    = "#1565C0"   # deep blue
-_GREEN   = "#2E7D32"   # dark green (positive / up)
-_RED     = "#C62828"   # dark red   (negative / down)
-_PURPLE  = "#6A1B9A"
-_TEAL    = "#00838F"
-_INDIGO  = "#3949AB"
-_GREY    = "#78909C"   # neutral (replaces yellow)
-_TMPL    = "plotly_white"
+# ── Cyber Dark colour palette ──────────────────────────────────────────────────
+_ORANGE  = "#F5A623"   # KITE brand accent
+_CYAN    = "#00E5FF"   # primary neon cyan
+_BLUE    = "#00B4FF"   # electric blue
+_GREEN   = "#00E5A0"   # neon teal-green (positive / up)
+_RED     = "#FF2D6F"   # hot crimson-pink (negative / down)
+_PURPLE  = "#9D4EDD"   # vivid purple
+_PINK    = "#FF3DDA"   # hot magenta
+_TEAL    = "#00BCD4"   # medium teal
+_INDIGO  = "#7B61FF"   # electric violet
+_GREY    = "#5B6FA8"   # blue-grey neutral
+_BG      = "#07071A"   # page background
+_PANEL   = "#0D0D28"   # chart panel background
+_GRID    = "#1C1C42"   # subtle gridlines
+_TMPL    = "plotly_dark"
 
-# Chart hover: larger, high-contrast label
-_HOVER = dict(font_size=14, bgcolor="white", bordercolor="#cccccc", font_color="#202124")
+# Chart hover: high-contrast on dark bg
+_HOVER = dict(font_size=14, bgcolor="#0D0D28", bordercolor="#00E5FF", font_color="#E0EAFF")
 # Plotly chart config: enable scroll-zoom & draggable pan
 _PCFG  = {"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["select2d","lasso2d"]}
 
-# Sentiment colours (neutral → grey, not yellow)
-_SENT_CLR = {"positive": _GREEN, "negative": _RED, "neutral": _GREY}
+# Sentiment colours
+_SENT_CLR = {"positive": _GREEN, "negative": _PINK, "neutral": _GREY}
 
-# Per-event-type marker colours (10 distinct, well-separated hues)
+# Per-event-type marker colours — vivid neon palette for dark bg
 _EVT_CLR = {
-    "Partnership":    _BLUE,
+    "Partnership":    _CYAN,
     "Milestone":      _ORANGE,
     "Listing":        _GREEN,
     "Funding":        _PURPLE,
     "Announcement":   _GREY,
-    "Community":      _TEAL,
-    "Product Launch": "#AD1457",
-    "Airdrop":        "#E64A19",
+    "Community":      _PINK,
+    "Product Launch": "#FF9100",
+    "Airdrop":        "#00FF9C",
     "Security":       _RED,
-    "Regulation":     "#4E342E",
+    "Regulation":     "#E040FB",
 }
 
 # DEX contract address → readable ticker
@@ -262,9 +322,9 @@ def _pct_styler(df, cols):
     def _clr(v):
         if not isinstance(v, (int, float)) or pd.isna(v):
             return ""
-        if v > 0:  return "color: #2E7D32; font-weight: 600"
-        if v < 0:  return "color: #C62828; font-weight: 600"
-        return "color: #78909C"
+        if v > 0:  return "color: #00E5A0; font-weight: 600"
+        if v < 0:  return "color: #FF2D6F; font-weight: 600"
+        return "color: #5B6FA8"
 
     return df.style.format({c: _fmt for c in present}).map(_clr, subset=present)
 
@@ -322,22 +382,22 @@ with tab_overview:
 
         fig = go.Figure()
 
-        # Main price line
+        # Main price line — electric cyan with subtle glow fill
         fig.add_trace(go.Scatter(
             x=chart_df[x_col], y=chart_df["price_usd"],
             mode="lines", name="Price (USD)",
-            line=dict(color=_ORANGE, width=1.5 if use_hourly else 2),
-            fill="tozeroy", fillcolor="rgba(245,166,35,0.10)",
+            line=dict(color=_CYAN, width=1.8 if use_hourly else 2.2),
+            fill="tozeroy", fillcolor="rgba(0,229,255,0.07)",
         ))
 
-        # 7-day / 168-hour moving average
+        # 7-day / 168-hour moving average — purple dashed
         if len(chart_df) > 7:
             ma_window = 168 if use_hourly else 7
             ma = chart_df["price_usd"].rolling(window=ma_window).mean()
             fig.add_trace(go.Scatter(
                 x=chart_df[x_col], y=ma,
                 mode="lines", name="7-day MA",
-                line=dict(color=_INDIGO, width=2, dash="dash"),
+                line=dict(color=_PURPLE, width=2, dash="dash"),
                 fill=None,
             ))
 
@@ -424,9 +484,11 @@ with tab_overview:
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Price (USD)",
             hovermode="x unified", template=_TMPL,
-            hoverlabel=dict(font_size=15, bgcolor="white", bordercolor="#cccccc", font_color="#202124"),
+            hoverlabel=_HOVER,
             height=460, margin=dict(l=0, r=0, t=40, b=0),
-            plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
+            plot_bgcolor=_PANEL, paper_bgcolor=_BG,
+            xaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
+            yaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
         )
         st.plotly_chart(fig, use_container_width=True, config=_PCFG)
 
@@ -440,7 +502,7 @@ with tab_overview:
             ]
             if legend_parts:
                 st.caption("**Event Shapes:** " + " | ".join(legend_parts) +
-                           " · Colors: 🟢 Positive  🔴 Negative  🟡 Neutral")
+                           " · Colors: 🩵 Positive  🩷 Negative  ◼ Neutral")
 
         # ── Performance Summary ──
         if not chart_df.empty:
@@ -483,34 +545,38 @@ with tab_overview:
                     price_close=("price_usd", "last"),
                 ).reset_index()
                 bar_colors = [
-                    _GREEN if r["price_close"] >= r["price_open"] else _RED
+                    _CYAN if r["price_close"] >= r["price_open"] else _PURPLE
                     for _, r in daily_vol.iterrows()
                 ]
                 fig_vol.add_trace(go.Bar(x=daily_vol["_day"], y=daily_vol["volume"],
-                                         marker_color=bar_colors, opacity=0.85))
+                                         marker_color=bar_colors, opacity=0.90,
+                                         marker_line_width=0))
             else:
                 _cv = chart_df.copy()
                 _cv["price_prev"] = _cv["price_usd"].shift(1)
-                bar_colors = [_BLUE] + [
-                    _GREEN if r["price_usd"] >= r["price_prev"] else _RED
+                bar_colors = [_CYAN] + [
+                    _CYAN if r["price_usd"] >= r["price_prev"] else _PURPLE
                     for _, r in _cv.iloc[1:].iterrows()
                 ]
                 fig_vol.add_trace(go.Bar(x=_cv[x_col], y=_cv["volume_24h"],
-                                         marker_color=bar_colors, opacity=0.85))
+                                         marker_color=bar_colors, opacity=0.90,
+                                         marker_line_width=0))
         except Exception:
             fig_vol.add_trace(go.Bar(x=chart_df[x_col], y=chart_df["volume_24h"],
-                                      marker_color=_BLUE, opacity=0.8))
+                                      marker_color=_CYAN, opacity=0.85, marker_line_width=0))
 
         fig_vol.update_layout(
             title="Hourly Trading Volume" if use_hourly else "Daily Trading Volume",
             xaxis_title="Datetime" if use_hourly else "Date",
             yaxis_title="Volume (USD)",
-            template=_TMPL, hoverlabel=_HOVER, height=240,
+            template=_TMPL, hoverlabel=_HOVER, height=260,
             margin=dict(l=0, r=0, t=40, b=0),
-            plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff",
+            plot_bgcolor=_PANEL, paper_bgcolor=_BG,
+            xaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
+            yaxis=dict(gridcolor=_GRID, zerolinecolor=_GRID),
             showlegend=False,
         )
-        st.caption("🟢 Price up day  🔴 Price down day")
+        st.caption("■ Cyan = price up day  ■ Purple = price down day")
         st.plotly_chart(fig_vol, use_container_width=True, config=_PCFG)
 
         # ── Trend summary ──

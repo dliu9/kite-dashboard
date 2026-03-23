@@ -34,6 +34,8 @@ EVENT_KEYWORDS = {
     "Airdrop": ["airdrop", "drop", "reward", "claim", "eligible", "snapshot"],
     "Milestone": ["milestone", "record", "achievement", "users", "transactions", "first", "100k", "1m"],
     "Community": ["ama", "community", "vote", "governance", "proposal", "hackathon", "meetup"],
+    "Security": ["hack", "exploit", "bug", "vulnerability", "breach", "attack", "scam", "phishing",
+                 "security", "audit", "patch", "fix", "incident", "compromised"],
 }
 
 
@@ -154,11 +156,22 @@ async def _scrape_browser_async(username: str = "GoKiteAI", max_tweets: int = 50
         if COOKIES_PATH.exists():
             import json
             raw = json.loads(COOKIES_PATH.read_text())
-            playwright_cookies = [
-                {"name": k, "value": v, "domain": ".x.com", "path": "/", "secure": True, "httpOnly": True}
-                for k, v in raw.items()
-                if isinstance(v, str)
-            ]
+            # Support both dict format {"auth_token": "..."} and twikit list format
+            # [{"name": "auth_token", "value": "...", ...}]
+            if isinstance(raw, list):
+                playwright_cookies = [
+                    {"name": c["name"], "value": c["value"],
+                     "domain": ".x.com", "path": "/", "secure": True, "httpOnly": True}
+                    for c in raw
+                    if isinstance(c, dict) and "name" in c and "value" in c
+                ]
+            else:
+                playwright_cookies = [
+                    {"name": k, "value": v,
+                     "domain": ".x.com", "path": "/", "secure": True, "httpOnly": True}
+                    for k, v in raw.items()
+                    if isinstance(v, str)
+                ]
             if playwright_cookies:
                 await context.add_cookies(playwright_cookies)
 

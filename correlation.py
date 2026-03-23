@@ -14,6 +14,8 @@ EVENT_DESCRIPTIONS = {
     "Airdrop":        "Free token distribution or reward claim event",
     "Milestone":      "Achievement: user count, transaction record, etc.",
     "Community":      "AMA, governance vote, hackathon, or community event",
+    "Security":       "Hack, exploit, vulnerability disclosure, or security audit",
+    "Regulation":     "Regulatory news, compliance update, or legal development",
     "Announcement":   "General update or news from the team",
 }
 

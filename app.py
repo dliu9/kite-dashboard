@@ -172,7 +172,9 @@ start_str = start_date.strftime("%Y-%m-%d")
 end_str = end_date.strftime("%Y-%m-%d")
 
 price_df = db.get_prices(start_str, end_str)
-hourly_df = db.get_hourly_prices()
+# Extend end by 3 days so correlation can look up forward prices (T+3d) near the range edge
+_hourly_end = (end_date + timedelta(days=3)).strftime("%Y-%m-%d") + " 23:59"
+hourly_df = db.get_hourly_prices(start_str, _hourly_end)
 events_df = db.get_events(start_str, end_str)
 exchange_df = db.get_latest_exchange_snapshots()
 current = fetcher.get_current_snapshot()
@@ -347,7 +349,7 @@ with tab_events:
             ev_date = st.date_input("Date", value=date.today())
             ev_type = st.selectbox("Type", [
                 "Partnership", "Product Launch", "Listing", "Funding",
-                "Airdrop", "Milestone", "Community", "Regulation", "Announcement",
+                "Airdrop", "Milestone", "Community", "Security", "Regulation", "Announcement",
             ])
             ev_desc = st.text_area("Description", height=100,
                                    placeholder="Describe the event…")

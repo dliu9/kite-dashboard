@@ -95,6 +95,33 @@ class DataFetcher:
         except Exception:
             return pd.DataFrame()
 
+    # ---- CoinGecko: Hourly Prices ----
+
+    def get_historical_prices_hourly(self, days: int = 30) -> pd.DataFrame:
+        """Fetch hourly prices — CoinGecko returns hourly for days=2..90."""
+        try:
+            r = self.session.get(
+                f"{CG_BASE}/coins/{KITE_CG_ID}/market_chart",
+                params={"vs_currency": "usd", "days": min(days, 90)},
+                timeout=20,
+            )
+            r.raise_for_status()
+            data = r.json()
+            prices = data.get("prices", [])
+            volumes = data.get("total_volumes", [])
+            rows = []
+            for i, (ts, price) in enumerate(prices):
+                dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                dt_str = dt.strftime("%Y-%m-%d %H:00")
+                rows.append({
+                    "datetime": dt_str,
+                    "price_usd": price,
+                    "volume_24h": volumes[i][1] if i < len(volumes) else None,
+                })
+            return pd.DataFrame(rows).drop_duplicates("datetime")
+        except Exception:
+            return pd.DataFrame()
+
     # ---- CoinGecko: Exchange Tickers ----
 
     def get_exchange_tickers(self, max_pages: int = 4) -> pd.DataFrame:

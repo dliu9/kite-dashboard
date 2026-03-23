@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, date, timezone
 
 from db import Database
 from data import DataFetcher
-from correlation import compute_impact_rows
+from correlation import (compute_impact_rows, compute_impact_rows_hourly,
+                         EVENT_DESCRIPTIONS, HOURLY_METRICS, DAILY_METRICS)
 import scraper
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -63,7 +64,18 @@ with st.sidebar:
         except ImportError:
             st.caption("Install `streamlit-autorefresh` for auto mode.")
 
-    if st.button("🔄 Refresh Price & Exchange Data", use_container_width=True, type="primary"):
+    if st.button("⏱️ Refresh Hourly Prices (last 30d)", use_container_width=True, type="primary"):
+        with st.spinner("Fetching hourly prices from CoinGecko…"):
+            h_df = fetcher.get_historical_prices_hourly(days=30)
+            if not h_df.empty:
+                n = db.upsert_hourly_prices(h_df)
+                db.log_refresh("price_hourly", n)
+                st.toast(f"✅ {n} hourly price records saved")
+            else:
+                st.toast("⚠️ Hourly price fetch failed", icon="⚠️")
+        st.rerun()
+
+    if st.button("🔄 Refresh Price & Exchange Data", use_container_width=True):
         with st.spinner("Fetching price history from CoinGecko…"):
             df = fetcher.get_historical_prices(days=140)
             if not df.empty:
@@ -160,6 +172,7 @@ start_str = start_date.strftime("%Y-%m-%d")
 end_str = end_date.strftime("%Y-%m-%d")
 
 price_df = db.get_prices(start_str, end_str)
+hourly_df = db.get_hourly_prices()
 events_df = db.get_events(start_str, end_str)
 exchange_df = db.get_latest_exchange_snapshots()
 current = fetcher.get_current_snapshot()
@@ -196,60 +209,112 @@ with tab_overview:
 
     st.divider()
 
-    if price_df.empty:
-        st.info("No price data yet. Click **Refresh Price & Exchange Data** in the sidebar.")
+    if price_df.empty and hourly_df.empty:
+        st.info("No price data yet. Click **Refresh** buttons in the sidebar.")
     else:
-        # ── Price chart with event markers ──
+        # ── Chart resolution toggle ──
+        chart_view = st.radio(
+            "Chart resolution",
+            ["Hourly (last 30d)", "Daily (full history)"],
+            horizontal=True,
+            index=0 if not hourly_df.empty else 1,
+        )
+
+        use_hourly = chart_view.startswith("Hourly") and not hourly_df.empty
+        chart_df = hourly_df if use_hourly else price_df
+        x_col    = "datetime" if use_hourly else "date"
+
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=price_df["date"], y=price_df["price_usd"],
+            x=chart_df[x_col], y=chart_df["price_usd"],
             mode="lines", name="Price (USD)",
-            line=dict(color="#7c3aed", width=2),
+            line=dict(color="#7c3aed", width=1.5 if use_hourly else 2),
             fill="tozeroy", fillcolor="rgba(124,58,237,0.08)",
         ))
 
         # Overlay event markers
+        sentiment_colors = {"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"}
         if not events_df.empty:
-            price_indexed = price_df.set_index("date")["price_usd"]
-            sentiment_colors = {"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"}
-            for _, ev in events_df.iterrows():
-                if ev["date"] in price_indexed.index:
-                    color = sentiment_colors.get(ev["sentiment_label"], "#f59e0b")
+            if use_hourly:
+                h_indexed = hourly_df.set_index("datetime")["price_usd"]
+                for _, ev in events_df.iterrows():
+                    dt_str = (ev.get("datetime_str") or ev["date"] + " 00:00:00")
+                    # round to hour
+                    try:
+                        from datetime import datetime as _dt
+                        d = _dt.strptime(dt_str[:16], "%Y-%m-%d %H:%M")
+                        if d.minute >= 30:
+                            from datetime import timedelta as _td
+                            d = d.replace(minute=0) + _td(hours=1)
+                        else:
+                            d = d.replace(minute=0)
+                        ev_hour = d.strftime("%Y-%m-%d %H:00")
+                    except Exception:
+                        continue
+                    if ev_hour not in h_indexed.index:
+                        continue
+                    color = sentiment_colors.get(ev.get("sentiment_label"), "#f59e0b")
+                    ev_type = ev.get("event_type", "")
+                    type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
+                    fig.add_trace(go.Scatter(
+                        x=[ev_hour], y=[h_indexed[ev_hour]],
+                        mode="markers",
+                        marker=dict(size=14, color=color, symbol="star",
+                                    line=dict(color="white", width=1)),
+                        name=ev_type,
+                        text=[f"{ev.get('description','')[:80]}<br><i>{type_desc}</i>"],
+                        hovertemplate=(
+                            f"<b>{ev_type}</b><br>"
+                            f"{ev_hour}<br>"
+                            "%{text}<br>"
+                            "Price: $%{y:.5f}<extra></extra>"
+                        ),
+                        showlegend=False,
+                    ))
+            else:
+                price_indexed = price_df.set_index("date")["price_usd"]
+                for _, ev in events_df.iterrows():
+                    if ev["date"] not in price_indexed.index:
+                        continue
+                    color = sentiment_colors.get(ev.get("sentiment_label"), "#f59e0b")
+                    ev_type = ev.get("event_type", "")
+                    type_desc = EVENT_DESCRIPTIONS.get(ev_type, "")
                     fig.add_trace(go.Scatter(
                         x=[ev["date"]], y=[price_indexed[ev["date"]]],
                         mode="markers",
                         marker=dict(size=14, color=color, symbol="star",
                                     line=dict(color="white", width=1)),
-                        name=ev["event_type"],
-                        text=ev["description"][:100],
+                        name=ev_type,
+                        text=[f"{ev.get('description','')[:80]}<br><i>{type_desc}</i>"],
                         hovertemplate=(
-                            f"<b>{ev['event_type']}</b><br>"
+                            f"<b>{ev_type}</b><br>"
                             f"{ev['date']}<br>"
-                            f"<i>%{{text}}</i><br>"
-                            f"Price: $%{{y:.4f}}<extra></extra>"
+                            "%{text}<br>"
+                            "Price: $%{y:.5f}<extra></extra>"
                         ),
                         showlegend=False,
                     ))
 
+        title = "KITE Price (Hourly) with Event Markers" if use_hourly else "KITE Price History with Event Markers"
         fig.update_layout(
-            title="KITE Price History with Business Event Markers",
-            xaxis_title="Date", yaxis_title="Price (USD)",
+            title=title,
+            xaxis_title="Datetime" if use_hourly else "Date",
+            yaxis_title="Price (USD)",
             hovermode="x unified", template="plotly_dark",
-            height=460,
-            margin=dict(l=0, r=0, t=40, b=0),
+            height=460, margin=dict(l=0, r=0, t=40, b=0),
         )
         st.plotly_chart(fig, use_container_width=True)
 
         # ── Volume chart ──
         fig_vol = go.Figure()
         fig_vol.add_trace(go.Bar(
-            x=price_df["date"], y=price_df["volume_24h"],
-            name="Volume (USD)", marker_color="#7c3aed",
-            opacity=0.8,
+            x=chart_df[x_col], y=chart_df["volume_24h"],
+            name="Volume (USD)", marker_color="#7c3aed", opacity=0.8,
         ))
         fig_vol.update_layout(
-            title="Daily Trading Volume",
-            xaxis_title="Date", yaxis_title="Volume (USD)",
+            title="Hourly Trading Volume" if use_hourly else "Daily Trading Volume",
+            xaxis_title="Datetime" if use_hourly else "Date",
+            yaxis_title="Volume (USD)",
             template="plotly_dark", height=220,
             margin=dict(l=0, r=0, t=40, b=0),
         )
@@ -366,70 +431,126 @@ with tab_events:
 with tab_corr:
     st.header("Event → Price Correlation Analysis")
 
-    if price_df.empty or events_df.empty:
-        st.info("Need both price history and events to run correlation. Refresh data and add events first.")
+    if events_df.empty:
+        st.info("No events yet. Fetch tweets or add events manually.")
+    elif hourly_df.empty and price_df.empty:
+        st.info("Need price data. Click a Refresh button in the sidebar.")
     else:
-        impact_df = compute_impact_rows(price_df, events_df)
+        # Choose hourly if available, fall back to daily
+        if not hourly_df.empty:
+            impact_df = compute_impact_rows_hourly(hourly_df, events_df)
+            available_metrics = HOURLY_METRICS
+            date_col = "Datetime"
+            st.caption("Using hourly price data. Metrics: T+1h, T+4h, T+12h, T+24h, T+3d.")
+        else:
+            impact_df = compute_impact_rows(price_df, events_df)
+            available_metrics = DAILY_METRICS
+            date_col = "Date"
+            st.caption("Hourly data not loaded — using daily. Click **Refresh Hourly Prices** for finer resolution.")
 
         if impact_df.empty:
-            st.warning("No events overlap with the price data range.")
+            st.warning("No events overlap with the price data range. Try refreshing hourly prices.")
         else:
-            # Summary table
-            st.subheader("Average Impact by Event Type")
-            num_cols = ["T+1d %", "T+3d %", "T+7d %", "Vol Spike %"]
-            avail = [c for c in num_cols if c in impact_df.columns]
-            summary = impact_df.groupby("Event Type")[avail].mean().round(2)
-            summary["# Events"] = impact_df.groupby("Event Type").size()
-            st.dataframe(summary.sort_values("T+1d %", ascending=False), use_container_width=True)
+            # ── Metric filter ──
+            metric = st.radio(
+                "Time window to analyse",
+                [m for m in available_metrics if m in impact_df.columns],
+                horizontal=True,
+            )
 
             st.divider()
 
-            # Charts
+            # ── Summary table ──
+            st.subheader("Average Price Change by Event Type")
+            sum_cols = [c for c in available_metrics if c in impact_df.columns] + ["Vol Spike %"]
+            summary = impact_df.groupby("Event Type")[sum_cols].mean().round(2)
+            summary["# Events"] = impact_df.groupby("Event Type").size()
+            # Add event type descriptions as a column
+            summary["What it means"] = summary.index.map(lambda t: EVENT_DESCRIPTIONS.get(t, ""))
+            st.dataframe(
+                summary.sort_values(metric, ascending=False),
+                use_container_width=True,
+                column_config={"What it means": st.column_config.TextColumn(width="large")},
+            )
+
+            st.divider()
+
+            # ── Charts ──
             ca, cb = st.columns(2)
             with ca:
-                scatter_df = impact_df.dropna(subset=["T+1d %"]).copy()
+                scatter_df = impact_df.dropna(subset=[metric]).copy()
                 scatter_df["Vol Spike %"] = scatter_df["Vol Spike %"].clip(lower=0)
+                # Add type description for hover
+                scatter_df["Type Info"] = scatter_df["Event Type"].map(
+                    lambda t: EVENT_DESCRIPTIONS.get(t, "")
+                )
                 fig_scatter = px.scatter(
                     scatter_df,
-                    x="Event Type", y="T+1d %",
+                    x="Event Type", y=metric,
                     color="Sentiment", size="Vol Spike %",
-                    title="Immediate Impact (T+1d) by Event Type",
+                    title=f"Price Impact ({metric}) by Event Type",
                     color_discrete_map={"positive": "#00c853", "negative": "#ff1744", "neutral": "#f59e0b"},
                     template="plotly_dark",
-                    hover_data=["Date", "Description"],
+                    hover_data={
+                        date_col: True,
+                        "Description": True,
+                        "Type Info": True,
+                        "Vol Spike %": True,
+                    },
                 )
                 fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
             with cb:
-                avg_7d = impact_df.groupby("Event Type")["T+7d %"].mean().dropna().reset_index()
+                avg_by_type = impact_df.groupby("Event Type")[metric].mean().dropna().reset_index()
+                avg_by_type["Type Info"] = avg_by_type["Event Type"].map(
+                    lambda t: EVENT_DESCRIPTIONS.get(t, "")
+                )
                 fig_bar = px.bar(
-                    avg_7d, x="Event Type", y="T+7d %",
-                    title="Average 7-Day Price Change by Event Type",
-                    color="T+7d %",
+                    avg_by_type, x="Event Type", y=metric,
+                    title=f"Average {metric} by Event Type",
+                    color=metric,
                     color_continuous_scale=["#ff1744", "#f59e0b", "#00c853"],
                     template="plotly_dark",
+                    hover_data={"Type Info": True},
                 )
                 fig_bar.add_hline(y=0, line_dash="dash", line_color="gray")
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-            # Immediate vs lagged
-            st.subheader("Immediate (T+1d) vs Lagged (T+7d) Reaction")
-            if "T+1d %" in impact_df.columns and "T+7d %" in impact_df.columns:
-                fig_dual = go.Figure()
-                valid = impact_df.dropna(subset=["T+1d %", "T+7d %"])
-                fig_dual.add_trace(go.Bar(name="T+1d %", x=valid["Date"], y=valid["T+1d %"],
-                                          marker_color="#7c3aed"))
-                fig_dual.add_trace(go.Bar(name="T+7d %", x=valid["Date"], y=valid["T+7d %"],
-                                          marker_color="#06b6d4"))
-                fig_dual.update_layout(barmode="group", template="plotly_dark",
-                                       title="Price Change Around Each Event",
-                                       xaxis_title="Event Date", yaxis_title="Price Change (%)",
-                                       height=320)
-                st.plotly_chart(fig_dual, use_container_width=True)
+            # ── Early vs late reaction dual bar ──
+            if len(available_metrics) >= 2:
+                m_early = available_metrics[0]   # T+1h or T+1d
+                m_late  = available_metrics[-2]  # T+24h or T+3d
+                both_avail = [c for c in [m_early, m_late] if c in impact_df.columns]
+                if len(both_avail) == 2:
+                    st.subheader(f"Early ({m_early}) vs Late ({m_late}) Reaction per Event")
+                    valid = impact_df.dropna(subset=both_avail)
+                    fig_dual = go.Figure()
+                    fig_dual.add_trace(go.Bar(name=m_early, x=valid[date_col], y=valid[m_early],
+                                              marker_color="#7c3aed"))
+                    fig_dual.add_trace(go.Bar(name=m_late,  x=valid[date_col], y=valid[m_late],
+                                              marker_color="#06b6d4"))
+                    fig_dual.update_layout(
+                        barmode="group", template="plotly_dark",
+                        title="Price Change Around Each Event",
+                        xaxis_title="Event Datetime" if date_col == "Datetime" else "Event Date",
+                        yaxis_title="Price Change (%)", height=320,
+                    )
+                    st.plotly_chart(fig_dual, use_container_width=True)
 
+            # ── Full impact table ──
             st.subheader("Full Event Impact Table")
-            st.dataframe(impact_df, use_container_width=True)
+            show_cols = [date_col, "Event Type", "Description", "Sentiment",
+                         "Price"] + [m for m in available_metrics if m in impact_df.columns] + ["Vol Spike %"]
+            st.dataframe(
+                impact_df[show_cols].sort_values(date_col, ascending=False),
+                use_container_width=True,
+                column_config={
+                    "Description": st.column_config.TextColumn(width="large"),
+                    **{m: st.column_config.NumberColumn(format="%.2f%%")
+                       for m in available_metrics if m in impact_df.columns},
+                },
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

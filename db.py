@@ -43,6 +43,11 @@ class Database:
                 price_usd REAL,
                 market_type TEXT DEFAULT 'spot'
             );
+            CREATE TABLE IF NOT EXISTS price_hourly (
+                datetime TEXT PRIMARY KEY,
+                price_usd REAL,
+                volume_24h REAL
+            );
             CREATE TABLE IF NOT EXISTS refresh_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT DEFAULT (datetime('now')),
@@ -72,6 +77,27 @@ class Database:
                 self.conn, params=(start_date, end_date),
             )
         return pd.read_sql("SELECT * FROM price_history ORDER BY date ASC", self.conn)
+
+    # ---- Hourly Prices ----
+
+    def upsert_hourly_prices(self, df: pd.DataFrame) -> int:
+        rows = df[["datetime", "price_usd", "volume_24h"]].to_dict("records")
+        cur = self.conn.cursor()
+        for row in rows:
+            cur.execute(
+                "INSERT OR REPLACE INTO price_hourly (datetime, price_usd, volume_24h) VALUES (?,?,?)",
+                (row["datetime"], row["price_usd"], row["volume_24h"]),
+            )
+        self.conn.commit()
+        return len(rows)
+
+    def get_hourly_prices(self, start_dt: str = None, end_dt: str = None) -> pd.DataFrame:
+        if start_dt and end_dt:
+            return pd.read_sql(
+                "SELECT * FROM price_hourly WHERE datetime BETWEEN ? AND ? ORDER BY datetime ASC",
+                self.conn, params=(start_dt, end_dt),
+            )
+        return pd.read_sql("SELECT * FROM price_hourly ORDER BY datetime ASC", self.conn)
 
     # ---- Events ----
 

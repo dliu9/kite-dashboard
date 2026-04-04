@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import requests as _req
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -239,14 +240,15 @@ def get_data_snapshot(chart_id: str, **dfs) -> str:
         elif chart_id in ("price_trend_analysis", "volume_intelligence"):
             if not price_df.empty and "price_usd" in price_df.columns:
                 returns = price_df["price_usd"].pct_change() * 100
-                snap.append(f"Daily return: avg {returns.mean():.2f}%, std {returns.std():.2f}%")
-                snap.append(f"Best day: {returns.max():.2f}%, Worst day: {returns.min():.2f}%")
+                desc = returns.describe()
+                snap.append(f"Daily return: avg {desc['mean']:.2f}%, std {desc['std']:.2f}%")
+                snap.append(f"Best day: {desc['max']:.2f}%, Worst day: {desc['min']:.2f}%")
                 if "volume_24h" in price_df.columns:
                     vols = price_df["volume_24h"].dropna()
                     anomalies = int((vols > 1.8 * vols.rolling(30).mean()).sum())
                     snap.append(f"Volume anomaly days (>1.8× 30d avg): {anomalies}")
-                roll30 = price_df["price_usd"].pct_change(30) * 100
-                snap.append(f"Latest 30d rolling return: {roll30.iloc[-1]:.2f}%")
+                latest_30d = price_df["price_usd"].pct_change(30).iloc[-1] * 100
+                snap.append(f"Latest 30d rolling return: {latest_30d:.2f}%")
 
         elif chart_id == "sentiment_heatmap":
             if not events_df.empty:
@@ -265,15 +267,19 @@ def get_data_snapshot(chart_id: str, **dfs) -> str:
 
 # ── Azure OpenAI (AI Foundry) call ───────────────────────────────────────────
 
-def generate_insights(chart_id: str, data_snapshot: str) -> str:
-    """Call Azure OpenAI via AI Foundry Responses API to generate 4 bullet insights."""
-    import requests as _req
+_AZURE_CONFIG: dict | None = None
+
+
+def _get_azure_config() -> tuple[str, str, str]:
+    """Resolve Azure credentials once and cache in module memory."""
+    global _AZURE_CONFIG
+    if _AZURE_CONFIG is not None:
+        return _AZURE_CONFIG["endpoint"], _AZURE_CONFIG["api_key"], _AZURE_CONFIG["model"]
 
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
     api_key  = os.environ.get("AZURE_OPENAI_KEY", "")
     model    = os.environ.get("AZURE_OPENAI_MODEL", "gpt-4o-mini")
 
-    # Fallback to Streamlit Cloud secrets when .env is not available
     if not endpoint or not api_key:
         try:
             import streamlit as st
@@ -282,6 +288,16 @@ def generate_insights(chart_id: str, data_snapshot: str) -> str:
             model    = model    or st.secrets.get("AZURE_OPENAI_MODEL", "gpt-4o-mini")
         except Exception:
             pass
+
+    if endpoint and api_key:
+        _AZURE_CONFIG = {"endpoint": endpoint, "api_key": api_key, "model": model}
+
+    return endpoint, api_key, model
+
+
+def generate_insights(chart_id: str, data_snapshot: str) -> str:
+    """Call Azure OpenAI via AI Foundry Responses API to generate 4 bullet insights."""
+    endpoint, api_key, model = _get_azure_config()
 
     if not endpoint or not api_key:
         return "⚠️ AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_KEY not set. Check your .env file."

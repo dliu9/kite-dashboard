@@ -9,6 +9,8 @@ import re
 import requests as _requests
 from datetime import datetime, timezone
 
+_WORD_RE = re.compile(r"\b\w+\b")
+
 # ---- Sentiment ----
 
 BULLISH_WORDS = {
@@ -40,7 +42,7 @@ EVENT_KEYWORDS = {
 
 
 def score_sentiment(text: str) -> tuple[float, str]:
-    words = set(re.findall(r"\b\w+\b", text.lower()))
+    words = set(_WORD_RE.findall(text.lower()))
     bullish = len(words & BULLISH_WORDS)
     bearish = len(words & BEARISH_WORDS)
     total = bullish + bearish

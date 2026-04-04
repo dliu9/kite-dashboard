@@ -83,12 +83,10 @@ class Database:
 
     def upsert_prices(self, df: pd.DataFrame) -> int:
         rows = df[["date", "price_usd", "volume_24h", "market_cap"]].to_dict("records")
-        cur = self.conn.cursor()
-        for row in rows:
-            cur.execute(
-                "INSERT OR REPLACE INTO price_history (date, price_usd, volume_24h, market_cap) VALUES (?,?,?,?)",
-                (row["date"], row["price_usd"], row["volume_24h"], row["market_cap"]),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO price_history (date, price_usd, volume_24h, market_cap) VALUES (?,?,?,?)",
+            [(r["date"], r["price_usd"], r["volume_24h"], r["market_cap"]) for r in rows],
+        )
         self.conn.commit()
         return len(rows)
 
@@ -104,12 +102,10 @@ class Database:
 
     def upsert_hourly_prices(self, df: pd.DataFrame) -> int:
         rows = df[["datetime", "price_usd", "volume_24h"]].to_dict("records")
-        cur = self.conn.cursor()
-        for row in rows:
-            cur.execute(
-                "INSERT OR REPLACE INTO price_hourly (datetime, price_usd, volume_24h) VALUES (?,?,?)",
-                (row["datetime"], row["price_usd"], row["volume_24h"]),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO price_hourly (datetime, price_usd, volume_24h) VALUES (?,?,?)",
+            [(r["datetime"], r["price_usd"], r["volume_24h"]) for r in rows],
+        )
         self.conn.commit()
         return len(rows)
 

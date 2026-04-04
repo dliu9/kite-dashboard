@@ -356,7 +356,17 @@ with st.sidebar:
         help="Fetches in batches of 20 and stops as soon as tweets older than the start date appear. Lower = fewer API credits used.",
     )
     st.caption(f"Range: **{start_date.strftime('%Y-%m-%d')}** → **{end_date.strftime('%Y-%m-%d')}**")
-    if st.button("🐦 Fetch Tweets via API", use_container_width=True, type="primary"):
+
+    _TWEET_COOLDOWN = 300  # seconds — prevent accidental double-spend
+    _last_fetch = st.session_state.get("_twitter_last_fetch")
+    _cooldown_remaining = 0
+    if _last_fetch is not None:
+        _cooldown_remaining = max(0, _TWEET_COOLDOWN - int((datetime.now() - _last_fetch).total_seconds()))
+
+    if _cooldown_remaining > 0:
+        st.caption(f"⏳ Next fetch available in {_cooldown_remaining}s")
+        st.button("🐦 Fetch Tweets via API", use_container_width=True, type="primary", disabled=True)
+    elif st.button("🐦 Fetch Tweets via API", use_container_width=True, type="primary"):
         _s = start_date.strftime("%Y-%m-%d")
         _e = end_date.strftime("%Y-%m-%d")
         with st.spinner(f"Fetching up to {api_tweet_limit} tweets from @GoKiteAI ({_s} → {_e})…"):
@@ -366,14 +376,16 @@ with st.sidebar:
                 end_date=_e,
                 max_tweets=api_tweet_limit,
             )
+        st.session_state["_twitter_last_fetch"] = datetime.now()
         if err:
             st.error(f"API error: {err}")
         elif tweets:
             existing_ids = db.get_existing_tweet_ids()
-            new_count = sum(
-                1 for t in tweets
-                if t["tweet_id"] not in existing_ids and db.add_event(t)
-            )
+            new_count = 0
+            for t in tweets:
+                if t["tweet_id"] not in existing_ids:
+                    if db.add_event(t):
+                        new_count += 1
             db.log_refresh("tweets", new_count)
             st.toast(f"✅ {new_count} new tweets added ({len(tweets)} fetched in range)")
             st.rerun()
@@ -397,7 +409,7 @@ hourly_df = db.get_hourly_prices(start_str, _hourly_end)
 events_df = db.get_events(start_str, end_str)
 exchange_df = db.get_latest_exchange_snapshots()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)  # 1 hour — CMC API quota is limited
 def get_current_snapshot_cached():
     return fetcher.get_current_snapshot()
 
@@ -567,6 +579,10 @@ with tab_overview:
     st.header("Current Snapshot")
 
     if current:
+        _last_updated = current.get("last_updated", "")
+        if _last_updated:
+            st.caption(f"CMC data as of {_last_updated[:16]} UTC · refreshes every 1h")
+
         def arrow(v):
             return "▲" if v >= 0 else "▼"
 
@@ -648,11 +664,9 @@ with tab_overview:
                 for _, ev in events_df.iterrows():
                     dt_str = (ev.get("datetime_str") or ev["date"] + " 00:00:00")
                     try:
-                        from datetime import datetime as _dt
-                        d = _dt.strptime(dt_str[:16], "%Y-%m-%d %H:%M")
+                        d = datetime.strptime(dt_str[:16], "%Y-%m-%d %H:%M")
                         if d.minute >= 30:
-                            from datetime import timedelta as _td
-                            d = d.replace(minute=0) + _td(hours=1)
+                            d = d.replace(minute=0) + timedelta(hours=1)
                         else:
                             d = d.replace(minute=0)
                         ev_hour = d.strftime("%Y-%m-%d %H:00")

@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -9,6 +12,7 @@ from data import DataFetcher
 from correlation import (compute_impact_rows, compute_impact_rows_hourly,
                          EVENT_DESCRIPTIONS, HOURLY_METRICS, DAILY_METRICS)
 import scraper
+import insights as _ins
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -212,6 +216,65 @@ button[kind="primary"],
 ::-webkit-scrollbar-track { background: #07071A; }
 ::-webkit-scrollbar-thumb { background: #1C1C42; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #2A2A5A; }
+
+/* ══════════════════════════════════════════════════════════════
+   AI INSIGHT PANEL — right-side slide dialog, 60% transparency
+   ══════════════════════════════════════════════════════════════ */
+
+/* Right-align and stretch the dialog to full height */
+[data-testid="stDialog"] > div[role="dialog"] {
+    position: fixed !important;
+    right: 0 !important;
+    left: auto !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 38% !important;
+    max-width: 38% !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    background: rgba(13, 13, 40, 0.60) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-left: 1px solid rgba(0, 229, 255, 0.25) !important;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5) !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
+    transform: none !important;
+}
+
+/* Semi-transparent backdrop so chart stays visible on left */
+[data-testid="stDialog"]::backdrop,
+[data-testid="stDialogBackdrop"] {
+    background: rgba(0, 0, 0, 0.35) !important;
+    backdrop-filter: blur(2px) !important;
+}
+
+/* Insight panel inner content */
+[data-testid="stDialog"] .stMarkdown p { color: #C0CCEE !important; }
+[data-testid="stDialog"] h3 { color: #00E5FF !important; font-family: 'Syne', sans-serif !important; }
+[data-testid="stDialog"] h4 { color: #8AA8FF !important; font-family: 'Syne', sans-serif !important; }
+
+/* Clickable chart-title buttons — styled as subheaders */
+button[data-testid^="stBaseButton"][key^="ih_"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    color: #8AA8FF !important;
+    font-family: 'Syne', sans-serif !important;
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    text-decoration: none !important;
+    width: auto !important;
+}
+button[data-testid^="stBaseButton"][key^="ih_"]:hover {
+    color: #00E5FF !important;
+    text-decoration: underline !important;
+    text-underline-offset: 3px !important;
+    background: transparent !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -283,14 +346,27 @@ with st.sidebar:
                 st.toast(f"✅ {n} exchange records saved")
         st.rerun()
 
-    max_posts = st.select_slider(
-        "Posts to fetch", options=[50, 100, 200, 300, 500], value=100
+    # ── Tweet Fetch via twitterapi.io ────────────────────────────────────────
+    st.subheader("🐦 Fetch Tweets")
+    api_tweet_limit = st.select_slider(
+        "Max tweets (budget control)",
+        options=[20, 50, 100, 150, 200],
+        value=100,
+        help="Fetches in batches of 20 and stops as soon as tweets older than the start date appear. Lower = fewer API credits used.",
     )
-    if st.button("🌐 Fetch Posts via Browser (Playwright)", use_container_width=True, type="primary"):
-        with st.spinner(f"Scraping up to {max_posts} posts from @GoKiteAI…"):
-            tweets, err = scraper.scrape_tweets_browser("GoKiteAI", max_tweets=max_posts)
+    st.caption(f"Range: **{start_date.strftime('%Y-%m-%d')}** → **{end_date.strftime('%Y-%m-%d')}**")
+    if st.button("🐦 Fetch Tweets via API", use_container_width=True, type="primary"):
+        _s = start_date.strftime("%Y-%m-%d")
+        _e = end_date.strftime("%Y-%m-%d")
+        with st.spinner(f"Fetching up to {api_tweet_limit} tweets from @GoKiteAI ({_s} → {_e})…"):
+            tweets, err = scraper.scrape_tweets_api(
+                username="GoKiteAI",
+                start_date=_s,
+                end_date=_e,
+                max_tweets=api_tweet_limit,
+            )
         if err:
-            st.error(f"Browser scrape error: {err}")
+            st.error(f"API error: {err}")
         elif tweets:
             existing_ids = db.get_existing_tweet_ids()
             new_count = sum(
@@ -298,64 +374,16 @@ with st.sidebar:
                 if t["tweet_id"] not in existing_ids and db.add_event(t)
             )
             db.log_refresh("tweets", new_count)
-            st.toast(f"✅ {new_count} new posts added as events")
+            st.toast(f"✅ {new_count} new tweets added ({len(tweets)} fetched in range)")
             st.rerun()
         else:
-            st.warning("No posts returned — make sure Playwright is installed and cookies are set.")
-
-    if st.button("🐦 Fetch Tweets (twikit fallback)", use_container_width=True):
-        with st.spinner("Scraping tweets via twikit…"):
-            tweets, err = scraper.scrape_tweets("GoKiteAI", max_tweets=100)
-        if err:
-            st.error(f"Scrape error: {err}")
-        elif tweets:
-            existing_ids = db.get_existing_tweet_ids()
-            new_count = sum(
-                1 for t in tweets
-                if t["tweet_id"] not in existing_ids and db.add_event(t)
-            )
-            db.log_refresh("tweets", new_count)
-            st.toast(f"✅ {new_count} new tweets added as events")
-            st.rerun()
-        else:
-            st.warning("No tweets returned — check cookie values are correct.")
+            st.warning("No tweets found in the selected date range.")
 
     st.divider()
 
     # Last refresh timestamps
     st.caption(f"Prices last fetched: {db.get_last_refresh('price_history')[:16]}")
     st.caption(f"Tweets last fetched: {db.get_last_refresh('tweets')[:16]}")
-    st.divider()
-
-    # X Cookie Import (recommended)
-    with st.expander("🍪 X Cookie Import (recommended)", expanded=True):
-        st.caption(
-            "Get these from Chrome: open x.com → F12 → Application → "
-            "Cookies → https://x.com — copy **auth_token** and **ct0** values."
-        )
-        auth_token = st.text_input("auth_token", type="password")
-        ct0 = st.text_input("ct0", type="password")
-        if st.button("Save Cookies", use_container_width=True, type="primary"):
-            if auth_token and ct0:
-                import json
-                cookies = {"auth_token": auth_token, "ct0": ct0}
-                scraper.COOKIES_PATH.write_text(json.dumps(cookies))
-                st.success("Cookies saved! Click 'Fetch Tweets' now.")
-            else:
-                st.error("Both auth_token and ct0 are required.")
-
-    # X Login (fallback)
-    with st.expander("🔑 X Password Login (fallback)"):
-        st.caption("May be blocked by X. Use cookie import above if this fails.")
-        x_user = st.text_input("X Username")
-        x_email = st.text_input("Email")
-        x_pass = st.text_input("Password", type="password")
-        if st.button("Login to X", use_container_width=True):
-            try:
-                scraper.login(x_user, x_email, x_pass)
-                st.success("Logged in — cookies saved locally.")
-            except Exception as e:
-                st.error(f"Login failed: {e}")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 start_str = start_date.strftime("%Y-%m-%d")
@@ -470,6 +498,48 @@ def _apply_dark(fig):
     return fig
 
 
+# ── AI Insight Panel ──────────────────────────────────────────────────────────
+
+@st.dialog("🔍 AI Insights", width="large")
+def _show_insight_dialog(chart_id: str, snapshot: str):
+    reg  = _ins.CHART_REGISTRY.get(chart_id, {})
+    title = reg.get("title", chart_id)
+    st.markdown(f"### {title}")
+    st.divider()
+
+    st.markdown("#### 🎯 Objective")
+    st.markdown(reg.get("objective", "—"))
+
+    st.divider()
+    st.markdown("#### 💡 Key Insights")
+
+    cache_key = f"_insight_cache_{chart_id}"
+    if cache_key not in st.session_state:
+        with st.spinner("Generating insights…"):
+            st.session_state[cache_key] = _ins.generate_insights(chart_id, snapshot)
+
+    for line in st.session_state[cache_key].strip().split("\n"):
+        if line.strip():
+            st.markdown(line)
+
+    st.divider()
+    st.markdown("#### 🗄️ Data Source")
+    st.caption(reg.get("data_source", "—"))
+
+    if st.button("🔄 Regenerate", key=f"regen_{chart_id}"):
+        del st.session_state[cache_key]
+        st.rerun()
+
+
+def chart_header(title: str, chart_id: str, snapshot: str = ""):
+    """Render a clickable subheader. Click opens the AI insight panel."""
+    if st.button(f"✨ {title}", key=f"ih_{chart_id}"):
+        _show_insight_dialog(chart_id, snapshot)
+    else:
+        # Always render the visual subheader text so layout is consistent
+        pass
+
+
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab_overview, tab_events, tab_corr, tab_exchanges, tab_analytics, tab_risk = st.tabs([
@@ -520,7 +590,8 @@ with tab_overview:
         x_col    = "datetime" if use_hourly else "date"
 
         # ── Price chart with 7-day moving average and event markers ──
-        st.subheader("Price Trend with Event Impact")
+        chart_header("Price Trend with Event Impact", "price_trend",
+                     _ins.get_data_snapshot("price_trend", chart_df=chart_df, current=current))
 
         fig = go.Figure()
 
@@ -649,7 +720,8 @@ with tab_overview:
 
         # ── Performance Summary ──
         if not chart_df.empty:
-            st.subheader("Period Performance Summary")
+            chart_header("Period Performance Summary", "period_performance",
+                         _ins.get_data_snapshot("period_performance", chart_df=chart_df, current=current))
             period_high = chart_df["price_usd"].max()
             period_low  = chart_df["price_usd"].min()
 
@@ -675,7 +747,8 @@ with tab_overview:
             pc4.metric("Worst Day %",  f"{worst_day_pct:+.2f}%")
 
         # ── Volume chart — green up days, red down days ──
-        st.subheader("Trading Volume")
+        chart_header("Trading Volume", "trading_volume",
+                     _ins.get_data_snapshot("trading_volume", chart_df=chart_df, current=current))
         fig_vol = go.Figure()
 
         try:
@@ -725,7 +798,8 @@ with tab_overview:
 
         # ── Trend summary ──
         if current:
-            st.subheader("Trend Overview")
+            chart_header("Trend Overview", "trend_overview",
+                         _ins.get_data_snapshot("trend_overview", current=current))
             tc1, tc2, tc3 = st.columns(3)
             tc1.metric("7 Day", f"{current['pct_7d']:+.2f}%",
                        "▲ Uptrend" if current['pct_7d'] > 0 else "▼ Downtrend")
@@ -811,7 +885,8 @@ with tab_events:
     # ── Charts row ──
     if not events_df.empty:
         st.divider()
-        st.subheader("Event Activity Analysis")
+        chart_header("Event Activity Analysis", "event_activity",
+                     _ins.get_data_snapshot("event_activity", events_df=events_df))
 
         # Event velocity
         try:
@@ -835,6 +910,8 @@ with tab_events:
         ca, cb, cc = st.columns([1.5, 1.5, 1])
 
         with ca:
+            chart_header("Events by Type", "events_by_type",
+                         _ins.get_data_snapshot("events_by_type", events_df=events_df))
             type_counts = events_df["event_type"].value_counts().reset_index()
             type_counts.columns = ["Event Type", "Count"]
             fig_hbar = px.bar(
@@ -849,6 +926,8 @@ with tab_events:
             st.plotly_chart(fig_hbar, use_container_width=True, config=_PCFG)
 
         with cb:
+            chart_header("Events per Month", "events_per_month",
+                         _ins.get_data_snapshot("events_per_month", events_df=events_df))
             try:
                 _ev2 = events_df.copy()
                 _ev2["month"] = _ev2["date"].astype(str).str[:7]
@@ -876,6 +955,8 @@ with tab_events:
                 st.caption("Monthly frequency chart unavailable.")
 
         with cc:
+            chart_header("Sentiment Split", "sentiment_split",
+                         _ins.get_data_snapshot("sentiment_split", events_df=events_df))
             sent_counts = events_df["sentiment_label"].value_counts().reset_index()
             sent_counts.columns = ["Sentiment", "Count"]
             fig_sent = px.pie(
@@ -924,7 +1005,8 @@ with tab_corr:
             st.divider()
 
             # ── Signal Quality Scorecard ──
-            st.subheader("Signal Quality Scorecard")
+            chart_header("Signal Quality Scorecard", "signal_scorecard",
+                         _ins.get_data_snapshot("signal_scorecard", impact_df=impact_df))
             _score_metric = valid_metrics[0] if valid_metrics else None
             if _score_metric and not impact_df.empty:
                 _avg_by_type = impact_df.groupby("Event Type")[_score_metric].mean().dropna()
@@ -946,7 +1028,8 @@ with tab_corr:
             st.divider()
 
             # ── Summary table with Signal column ──
-            st.subheader("Average Price Change by Event Type")
+            chart_header("Average Price Change by Event Type", "avg_price_change",
+                         _ins.get_data_snapshot("avg_price_change", impact_df=impact_df))
             _sum_cols = valid_metrics + ["Vol Spike %"]
             _summary  = impact_df.groupby("Event Type")[_sum_cols].mean().round(2)
             _summary["# Events"]     = impact_df.groupby("Event Type").size()
@@ -972,6 +1055,8 @@ with tab_corr:
             st.divider()
 
             # ── Return Heatmap ──
+            chart_header("Return Heatmap by Event Type & Time Window", "return_heatmap",
+                         _ins.get_data_snapshot("return_heatmap", impact_df=impact_df))
             _heatmap_df = impact_df.groupby("Event Type")[valid_metrics].mean().round(2)
             # Fill NaN cells with 0 so every cell renders — NaN causes blank patches
             _heatmap_df = _heatmap_df.fillna(0)
@@ -994,6 +1079,8 @@ with tab_corr:
             st.divider()
 
             # ── Horizontal average bar chart ──
+            chart_header("Average Return by Event Type", "avg_return_bar",
+                         _ins.get_data_snapshot("avg_return_bar", impact_df=impact_df))
             _avg_by_type2 = (
                 impact_df.groupby("Event Type")[metric].mean().dropna()
                 .reset_index().sort_values(metric, ascending=True)
@@ -1015,7 +1102,8 @@ with tab_corr:
             st.divider()
 
             # ── Top 5 Best / Worst Events ──
-            st.subheader(f"Standout Events — {metric}")
+            chart_header(f"Standout Events — {metric}", "standout_events",
+                         _ins.get_data_snapshot("standout_events", impact_df=impact_df))
             _ranked = impact_df.dropna(subset=[metric]).copy()
             _ranked_show = _ranked[[date_col, "Event Type", "Description", metric]].copy()
             _ranked_show["Description"] = _ranked_show["Description"].str[:50]
@@ -1044,7 +1132,8 @@ with tab_corr:
                     _m_early, _m_late = valid_metrics[0], valid_metrics[-1]
                 _both    = [c for c in [_m_early, _m_late] if c in impact_df.columns]
                 if len(_both) == 2:
-                    st.subheader(f"Early ({_m_early}) vs Late ({_m_late}) Reaction per Event")
+                    chart_header(f"Early ({_m_early}) vs Late ({_m_late}) Reaction per Event", "early_late_reaction",
+                                 _ins.get_data_snapshot("early_late_reaction", impact_df=impact_df))
                     _valid = impact_df.dropna(subset=_both, how="all")
                     fig_dual = go.Figure()
                     fig_dual.add_trace(go.Bar(name=_m_early, x=_valid[date_col], y=_valid[_m_early], marker_color=_BLUE))
@@ -1060,7 +1149,8 @@ with tab_corr:
                     st.plotly_chart(fig_dual, use_container_width=True, config=_PCFG)
 
             # ── Full impact table ──
-            st.subheader("Full Event Impact Table")
+            chart_header("Full Event Impact Table", "full_impact_table",
+                         _ins.get_data_snapshot("full_impact_table", impact_df=impact_df))
             _full_cols = ([date_col, "Event Type", "Description", "Sentiment", "Price"]
                          + valid_metrics + ["Vol Spike %"])
             _full_cols = [c for c in _full_cols if c in impact_df.columns]
@@ -1109,6 +1199,8 @@ with tab_exchanges:
         ca, cb = st.columns(2)
 
         with ca:
+            chart_header("Top 20 Markets by Volume", "top20_markets",
+                         _ins.get_data_snapshot("top20_markets", exchange_df=exchange_df))
             top20 = exchange_df.nlargest(20, "volume_usd")
             fig_ex = px.bar(
                 top20, x="volume_usd", y="exchange", orientation="h",
@@ -1125,6 +1217,8 @@ with tab_exchanges:
             st.caption("Blue = centralised spot · Green = DEX")
 
         with cb:
+            chart_header("Volume by Geography & Exchange", "volume_geography",
+                         _ins.get_data_snapshot("volume_geography", exchange_df=exchange_df))
             fig_tree = px.treemap(
                 exchange_df, path=["geography", "exchange"], values="volume_usd",
                 title="Volume by Geography & Exchange",
@@ -1140,6 +1234,8 @@ with tab_exchanges:
             st.plotly_chart(fig_tree, use_container_width=True, config=_PCFG)
             st.caption("Outer = geography region · Inner = exchange · Size = USD volume")
 
+        chart_header("Spot vs DEX Volume Split", "spot_dex_split",
+                     _ins.get_data_snapshot("spot_dex_split", exchange_df=exchange_df))
         _type_vol = exchange_df.groupby("market_type")["volume_usd"].sum().reset_index()
         fig_type = px.pie(_type_vol, values="volume_usd", names="market_type",
                           title="Spot vs DEX Volume Split",
@@ -1153,7 +1249,8 @@ with tab_exchanges:
         st.divider()
 
         # Price consistency / arbitrage
-        st.subheader("Price Consistency")
+        chart_header("Price Consistency", "price_consistency",
+                     _ins.get_data_snapshot("price_consistency", exchange_df=exchange_df))
         if "price_usd" in exchange_df.columns:
             _prices = exchange_df["price_usd"].dropna()
             if not _prices.empty:
@@ -1178,7 +1275,8 @@ with tab_exchanges:
                     st.success(f"All exchanges within 0.5% of median price (${_med:.5f}). No significant arbitrage detected.")
 
         st.divider()
-        st.subheader("Volume by Quote Currency (top 10)")
+        chart_header("Volume by Quote Currency", "volume_quote_currency",
+                     _ins.get_data_snapshot("volume_quote_currency", exchange_df=exchange_df))
         # Clean DEX contract addresses → readable ticker names
         _ex_clean = exchange_df.copy()
         _ex_clean["quote"] = _ex_clean["quote"].replace(_QUOTE_MAP)
@@ -1195,7 +1293,8 @@ with tab_exchanges:
         st.plotly_chart(fig_quote, use_container_width=True, config=_PCFG)
         st.caption("USDT dominance = institutional depth · KRW/TRY spikes = retail momentum (Korea/Turkey)")
 
-        st.subheader("All Exchange Data")
+        chart_header("All Exchange Data", "all_exchange_data",
+                     _ins.get_data_snapshot("all_exchange_data", exchange_df=exchange_df))
         st.dataframe(
             _pct_styler(_ex_clean[["exchange", "base", "quote", "volume_usd", "price_usd",
                         "market_type", "geography"]].sort_values("volume_usd", ascending=False), []),
@@ -1236,7 +1335,8 @@ with tab_analytics:
         _t1_col = None
 
     # ── Section 1: Price Trend Analysis ──
-    st.subheader("Price Trend Analysis")
+    chart_header("Price Trend Analysis", "price_trend_analysis",
+                 _ins.get_data_snapshot("price_trend_analysis", price_df=price_df))
     if not _has_price:
         st.info("No price data available. Click a Refresh button in the sidebar.")
     else:
@@ -1280,7 +1380,8 @@ with tab_analytics:
     st.divider()
 
     # ── Section 2: Event Signal Intelligence ──
-    st.subheader("Event Signal Intelligence")
+    chart_header("Event Signal Intelligence", "event_signal_intelligence",
+                 _ins.get_data_snapshot("event_signal_intelligence", price_df=price_df, events_df=events_df, impact_df=_tab_impact))
     col_c, col_d = st.columns(2)
 
     with col_c:
@@ -1355,7 +1456,8 @@ with tab_analytics:
     st.divider()
 
     # ── Section 3: Volume Intelligence ──
-    st.subheader("Volume Intelligence")
+    chart_header("Volume Intelligence", "volume_intelligence",
+                 _ins.get_data_snapshot("volume_intelligence", price_df=price_df))
     if not _has_price or "volume_24h" not in _price_sorted.columns:
         st.info("No volume data available. Refresh price data.")
     else:
@@ -1390,7 +1492,8 @@ with tab_analytics:
     st.divider()
 
     # ── Section 4: Data Quality Dashboard ──
-    st.subheader("Data Quality Dashboard")
+    chart_header("Data Quality Dashboard", "data_quality",
+                 _ins.get_data_snapshot("data_quality", price_df=price_df, hourly_df=hourly_df, events_df=events_df))
     _total_ev = len(events_df)
     _valid_dt = int(events_df["datetime_str"].notna().sum()) if not events_df.empty and "datetime_str" in events_df.columns else 0
     _price_days  = len(price_df)
@@ -1476,7 +1579,8 @@ with tab_risk:
         # Sentiment heatmap
         if not events_df.empty and "event_type" in events_df.columns and "sentiment_label" in events_df.columns:
             st.divider()
-            st.subheader("📊 Sentiment Heatmap by Event Type")
+            chart_header("Sentiment Heatmap by Event Type", "sentiment_heatmap",
+                         _ins.get_data_snapshot("sentiment_heatmap", events_df=events_df))
             try:
                 _hm = events_df.groupby(["event_type", "sentiment_label"]).size().unstack(fill_value=0)
                 for _sc in ["positive", "neutral", "negative"]:
@@ -1517,7 +1621,8 @@ with tab_risk:
         st.divider()
 
         # Rolling signal quality
-        st.subheader("📊 Rolling Signal Quality (last 30 days)")
+        chart_header("Rolling Signal Quality (last 30 days)", "rolling_signal_quality",
+                     _ins.get_data_snapshot("rolling_signal_quality", impact_df=_risk_impact))
         _sq_rendered = False
         if (not _risk_impact.empty and _risk_t1_col is not None
                 and _risk_t1_col in _risk_impact.columns and not events_df.empty):
@@ -1565,7 +1670,8 @@ with tab_risk:
         st.divider()
 
         # Pattern Library
-        st.subheader("📊 Pattern Library (computed from your data)")
+        chart_header("Pattern Library", "pattern_library",
+                     _ins.get_data_snapshot("pattern_library", price_df=price_df, events_df=events_df))
         try:
             _pat_i = compute_impact_rows(price_df, events_df) if not (price_df.empty or events_df.empty) else pd.DataFrame()
             if not _pat_i.empty and "T+1d %" in _pat_i.columns:
@@ -1604,7 +1710,8 @@ with tab_risk:
 
         if not events_df.empty:
             st.divider()
-            st.subheader("📅 Latest 7 Events")
+            chart_header("Latest 7 Events", "latest_events",
+                         _ins.get_data_snapshot("latest_events", events_df=events_df))
             _rc = [c for c in ["date", "event_type", "description", "sentiment_label", "source"] if c in events_df.columns]
             st.dataframe(_pct_styler(events_df.head(7)[_rc], []), use_container_width=True, hide_index=True)
 

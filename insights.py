@@ -4,8 +4,12 @@ Registry maps chart_id → metadata; generate_insights() calls Claude Haiku.
 """
 import json
 import os
+from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # ── Chart metadata registry ────────────────────────────────────────────────────
 CHART_REGISTRY = {
@@ -277,17 +281,23 @@ def generate_insights(chart_id: str, data_snapshot: str) -> str:
     objective  = chart_info.get("objective", "")
 
     prompt = (
-        f"You are a crypto market analyst for the KITE token dashboard.\n\n"
+        f"You are a senior crypto business and marketing strategist advising the KITE token team.\n\n"
         f"Chart: {title}\n"
         f"Objective: {objective}\n\n"
         f"Current data snapshot:\n{data_snapshot}\n\n"
-        "Generate exactly 4 concise, data-driven bullet point insights.\n"
-        "Each bullet must:\n"
-        "- Reference actual numbers from the data snapshot where possible\n"
-        "- Be actionable or meaningful for an investor/analyst\n"
+        "Respond in exactly two sections separated by the line ---CTA---\n\n"
+        "SECTION 1 — KEY INSIGHTS (4 bullets):\n"
+        "- Reference actual numbers from the data where possible\n"
         "- Use ▲ for positive signals, ▼ for negative, ◆ for neutral\n"
-        "- Be 1-2 sentences max\n\n"
-        "Respond with ONLY the 4 bullet points, no headers or preamble."
+        "- 1-2 sentences per bullet\n\n"
+        "---CTA---\n\n"
+        "SECTION 2 — PRIORITY ACTIONS (2-5 items):\n"
+        "Pose the user as a business and marketing decision-maker for KITE token.\n"
+        "Give only the most critical, specific actions they should take RIGHT NOW based on this data.\n"
+        "Format each as: 🎯 Priority [N]: [Bold action verb] — [specific what/why in 1-2 sentences]\n"
+        "Focus on: community campaigns, exchange outreach, partnership activation, "
+        "announcement timing, or risk mitigation — whichever is most relevant.\n\n"
+        "Output ONLY the two sections. No extra headers, no preamble."
     )
 
     try:

@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
-load_dotenv()
+from pathlib import Path
+load_dotenv(Path(__file__).parent / ".env")
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -510,17 +511,29 @@ def _show_insight_dialog(chart_id: str, snapshot: str):
     st.markdown("#### 🎯 Objective")
     st.markdown(reg.get("objective", "—"))
 
-    st.divider()
-    st.markdown("#### 💡 Key Insights")
-
     cache_key = f"_insight_cache_{chart_id}"
     if cache_key not in st.session_state:
         with st.spinner("Generating insights…"):
             st.session_state[cache_key] = _ins.generate_insights(chart_id, snapshot)
 
-    for line in st.session_state[cache_key].strip().split("\n"):
+    raw = st.session_state[cache_key]
+    parts = raw.split("---CTA---")
+    insights_text = parts[0].strip()
+    cta_text      = parts[1].strip() if len(parts) > 1 else ""
+
+    st.divider()
+    st.markdown("#### 💡 Key Insights")
+    for line in insights_text.split("\n"):
         if line.strip():
             st.markdown(line)
+
+    if cta_text:
+        st.divider()
+        st.markdown("#### 🚀 Priority Actions")
+        st.caption("As a business & marketing decision-maker, act on these now:")
+        for line in cta_text.split("\n"):
+            if line.strip():
+                st.markdown(line)
 
     st.divider()
     st.markdown("#### 🗄️ Data Source")

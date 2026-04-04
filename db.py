@@ -66,6 +66,18 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_refresh_log_type   ON refresh_log(data_type, timestamp);
         """)
         self.conn.commit()
+        self._migrate()
+
+    def _migrate(self):
+        """Add missing columns to existing tables without dropping data."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(refresh_log)").fetchall()}
+        if "status" not in cols:
+            self.conn.execute("ALTER TABLE refresh_log ADD COLUMN status TEXT DEFAULT 'success'")
+        if "error_message" not in cols:
+            self.conn.execute("ALTER TABLE refresh_log ADD COLUMN error_message TEXT")
+        if "duration_ms" not in cols:
+            self.conn.execute("ALTER TABLE refresh_log ADD COLUMN duration_ms INTEGER")
+        self.conn.commit()
 
     # ---- Price History ----
 

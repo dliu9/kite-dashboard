@@ -273,6 +273,16 @@ def generate_insights(chart_id: str, data_snapshot: str) -> str:
     api_key  = os.environ.get("AZURE_OPENAI_KEY", "")
     model    = os.environ.get("AZURE_OPENAI_MODEL", "gpt-4o-mini")
 
+    # Fallback to Streamlit Cloud secrets when .env is not available
+    if not endpoint or not api_key:
+        try:
+            import streamlit as st
+            endpoint = endpoint or st.secrets.get("AZURE_OPENAI_ENDPOINT", "")
+            api_key  = api_key  or st.secrets.get("AZURE_OPENAI_KEY", "")
+            model    = model    or st.secrets.get("AZURE_OPENAI_MODEL", "gpt-4o-mini")
+        except Exception:
+            pass
+
     if not endpoint or not api_key:
         return "⚠️ AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_KEY not set. Check your .env file."
 
